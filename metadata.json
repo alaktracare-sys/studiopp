@@ -1,0 +1,8 @@
+{
+  "name": "Already Music",
+  "description": "Music streaming, playlist management, and offline audio downloads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
