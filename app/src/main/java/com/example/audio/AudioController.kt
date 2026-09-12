@@ -4,10 +4,24 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Handler
+import android.util.Log
 import androidx.compose.ui.graphics.Color
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.audio.AudioRendererEventListener
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.metadata.MetadataOutput
+import androidx.media3.exoplayer.text.TextOutput
+import androidx.media3.exoplayer.video.VideoRendererEventListener
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.request.ImageRequest
@@ -38,7 +52,47 @@ data class PlaybackState(
 )
 
 class AudioController private constructor(private val context: Context) {
-    val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    val player: ExoPlayer = run {
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
+
+        val codecSelector = MediaCodecSelector { mimeType, requiresSecure, requiresTunneling ->
+            val defaultDecoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecure, requiresTunneling)
+            defaultDecoders.sortedWith { a, b ->
+                val aIsC2 = a.name.startsWith("c2.", ignoreCase = true)
+                val bIsC2 = b.name.startsWith("c2.", ignoreCase = true)
+                when {
+                    !aIsC2 && bIsC2 -> -1
+                    aIsC2 && !bIsC2 -> 1
+                    else -> 0
+                }
+            }
+        }
+
+        val renderersFactory = RenderersFactory { handler: Handler,
+            _: VideoRendererEventListener,
+            audioListener: AudioRendererEventListener,
+            _: TextOutput,
+            _: MetadataOutput ->
+            arrayOf<Renderer>(
+                MediaCodecAudioRenderer(
+                    context,
+                    codecSelector,
+                    handler,
+                    audioListener,
+                    DefaultAudioSink.Builder(context).build()
+                )
+            )
+        }
+
+        ExoPlayer.Builder(context, renderersFactory)
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .build()
+    }
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -64,6 +118,11 @@ class AudioController private constructor(private val context: Context) {
                 } else if (state == Player.STATE_ENDED) {
                     handleTrackEnded()
                 }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("AudioController", "Playback error: ${error.errorCodeName} (${error.errorCode}): ${error.message}")
+                _playbackState.value = _playbackState.value.copy(isPlaying = false)
             }
         })
     }
@@ -151,6 +210,14 @@ class AudioController private constructor(private val context: Context) {
                 player.play()
             }
         }
+    }
+
+    fun pause() {
+        player.pause()
+    }
+
+    fun play() {
+        player.play()
     }
 
     fun seekTo(positionMs: Long) {
@@ -291,8 +358,15 @@ class AudioController private constructor(private val context: Context) {
                 val bitmap = (result as? BitmapDrawable)?.bitmap
                 if (bitmap != null) {
                     val palette = Palette.from(bitmap).generate()
-                    val dominantRgb = palette.getDominantColor(0xFF1E1B4B.toInt())
-                    val secondaryRgb = palette.getDarkMutedColor(0xFF0F172A.toInt())
+                    val swatch = palette.vibrantSwatch
+                        ?: palette.dominantSwatch
+                        ?: palette.darkVibrantSwatch
+                        ?: palette.mutedSwatch
+                        ?: palette.lightVibrantSwatch
+                    val dominantRgb = swatch?.rgb ?: palette.getDominantColor(0xFF6B2132.toInt())
+                    val secondaryRgb = palette.getDarkMutedColor(
+                        palette.getMutedColor(0xFF1B0B10.toInt())
+                    )
                     withContext(Dispatchers.Main) {
                         _playbackState.value = _playbackState.value.copy(
                             dominantColor = Color(dominantRgb),
@@ -301,6 +375,28 @@ class AudioController private constructor(private val context: Context) {
                     }
                 }
             } catch (_: Exception) {}
+        }
+    }
+
+    private var sleepTimerJob: Job? = null
+    private val _sleepTimerRemainingSeconds = MutableStateFlow<Int?>(null)
+    val sleepTimerRemainingSeconds: StateFlow<Int?> = _sleepTimerRemainingSeconds.asStateFlow()
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        if (minutes <= 0) {
+            _sleepTimerRemainingSeconds.value = null
+            return
+        }
+        sleepTimerJob = scope.launch {
+            var remaining = minutes * 60
+            while (remaining > 0) {
+                _sleepTimerRemainingSeconds.value = remaining
+                delay(1000)
+                remaining--
+            }
+            _sleepTimerRemainingSeconds.value = null
+            pause()
         }
     }
 

@@ -1,10 +1,13 @@
 package com.example.ui.screens.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,7 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.MusicRepository
 import com.example.model.Playlist
+import com.example.model.Song
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
+
+enum class LibraryTab { ALL, PLAYLISTS, DOWNLOADS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +37,9 @@ fun LibraryScreen(
     onNavigateToLikedSongs: () -> Unit
 ) {
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+    var downloadedSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var likedSongsCount by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableStateOf(LibraryTab.ALL) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToEdit by remember { mutableStateOf<Playlist?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
@@ -39,19 +48,22 @@ fun LibraryScreen(
     LaunchedEffect(Unit) {
         playlists = repository.getPlaylists()
         likedSongsCount = repository.authPreferences.getLikedSongIds().size
+        val allSongs = repository.getSongs()
+        downloadedSongs = allSongs.filter { it.isDownloaded || it.localPath != null }
     }
 
     Scaffold(
-        containerColor = Color(0xFF121212),
+        containerColor = AlaktraBackground,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showCreateDialog = true },
-                containerColor = Color(0xFF1DB954),
-                contentColor = Color.Black,
-                modifier = Modifier.padding(bottom = 70.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Playlist")
-            }
+                containerColor = AlaktraMint,
+                contentColor = Color(0xFF041C12),
+                shape = RoundedCornerShape(16.dp),
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New Playlist", fontWeight = FontWeight.Bold) },
+                modifier = Modifier.padding(bottom = 76.dp)
+            )
         }
     ) { padding ->
         Column(
@@ -59,151 +71,322 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Text(
                     text = "Your Library",
                     style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         fontSize = 28.sp
                     ),
-                    color = Color.White
+                    color = AlaktraTextPrimary
                 )
 
-                IconButton(onClick = { showCreateDialog = true }) {
+                IconButton(
+                    onClick = { showCreateDialog = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(AlaktraSurface)
+                        .border(1.dp, AlaktraBorder, CircleShape)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "New Playlist",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        tint = AlaktraMint,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
 
+            // Tabs / Filters
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    FilterChip(
+                        selected = selectedTab == LibraryTab.ALL,
+                        onClick = { selectedTab = LibraryTab.ALL },
+                        label = { Text("All") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AlaktraMint,
+                            selectedLabelColor = Color(0xFF0A2218),
+                            containerColor = AlaktraSurface,
+                            labelColor = AlaktraTextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = if (selectedTab == LibraryTab.ALL) AlaktraMint else AlaktraBorder,
+                            enabled = true,
+                            selected = selectedTab == LibraryTab.ALL
+                        )
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = selectedTab == LibraryTab.PLAYLISTS,
+                        onClick = { selectedTab = LibraryTab.PLAYLISTS },
+                        label = { Text("Playlists") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AlaktraMint,
+                            selectedLabelColor = Color(0xFF0A2218),
+                            containerColor = AlaktraSurface,
+                            labelColor = AlaktraTextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = if (selectedTab == LibraryTab.PLAYLISTS) AlaktraMint else AlaktraBorder,
+                            enabled = true,
+                            selected = selectedTab == LibraryTab.PLAYLISTS
+                        )
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = selectedTab == LibraryTab.DOWNLOADS,
+                        onClick = { selectedTab = LibraryTab.DOWNLOADS },
+                        label = { Text("Downloaded (${downloadedSongs.size})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AlaktraMint,
+                            selectedLabelColor = Color(0xFF0A2218),
+                            containerColor = AlaktraSurface,
+                            labelColor = AlaktraTextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = if (selectedTab == LibraryTab.DOWNLOADS) AlaktraMint else AlaktraBorder,
+                            enabled = true,
+                            selected = selectedTab == LibraryTab.DOWNLOADS
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 140.dp)
+                contentPadding = PaddingValues(bottom = 150.dp)
             ) {
-                // Liked Songs card
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onNavigateToLikedSongs)
-                            .padding(horizontal = 20.dp, vertical = 10.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
+                // Liked Songs card (show if tab is ALL or PLAYLISTS)
+                if (selectedTab != LibraryTab.DOWNLOADS) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF450AF5), Color(0xFF8E8EE5), Color(0xFFC4EFD9))
-                                    )
-                                )
+                                .fillMaxWidth()
+                                .clickable(onClick = onNavigateToLikedSongs)
+                                .padding(horizontal = 20.dp, vertical = 8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint)
+                                        )
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Liked Songs",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    ),
+                                    color = AlaktraTextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = "Pinned",
+                                        tint = AlaktraMint,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Auto playlist • $likedSongsCount tracks",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AlaktraTextSecondary
+                                    )
+                                }
+                            }
                         }
+                    }
+                }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                // Downloaded Card (if in ALL or DOWNLOADS)
+                if (selectedTab == LibraryTab.DOWNLOADS || (selectedTab == LibraryTab.ALL && downloadedSongs.isNotEmpty())) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onNavigateToLikedSongs)
+                                .padding(horizontal = 20.dp, vertical = 8.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF0D9488), Color(0xFF065F46))
+                                        )
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DownloadDone,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Liked Songs",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Playlist • $likedSongsCount songs",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.LightGray
-                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Downloaded Music",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    ),
+                                    color = AlaktraTextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = "Offline ready • ${downloadedSongs.size} tracks",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AlaktraTextSecondary
+                                )
+                            }
                         }
                     }
                 }
 
                 // Playlists List
-                items(playlists) { playlist ->
-                    var menuExpanded by remember { mutableStateOf(false) }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigateToPlaylist(playlist.id, playlist.name) }
-                            .padding(horizontal = 20.dp, vertical = 10.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF282828))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.QueueMusic,
-                                contentDescription = null,
-                                tint = Color.LightGray,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = playlist.name,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Playlist • ${playlist.songCount} songs",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.LightGray
-                            )
-                        }
-
-                        Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Options",
-                                    tint = Color.LightGray
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                                modifier = Modifier.background(Color(0xFF242424))
+                if (selectedTab != LibraryTab.DOWNLOADS) {
+                    if (playlists.isEmpty()) {
+                        item {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp, horizontal = 24.dp)
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Rename", color = Color.White) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        playlistToEdit = playlist
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "No custom playlists yet",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = AlaktraTextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Tap 'New Playlist' to create your first music collection.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AlaktraTextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(playlists) { playlist ->
+                            var menuExpanded by remember { mutableStateOf(false) }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateToPlaylist(playlist.id, playlist.name) }
+                                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(AlaktraSurface)
+                                        .border(1.dp, AlaktraBorder, RoundedCornerShape(12.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QueueMusic,
+                                        contentDescription = null,
+                                        tint = AlaktraMint,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = playlist.name,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 15.sp
+                                        ),
+                                        color = AlaktraTextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "Playlist • ${playlist.songCount} tracks",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AlaktraTextSecondary
+                                    )
+                                }
+
+                                Box {
+                                    IconButton(onClick = { menuExpanded = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = "Options",
+                                            tint = AlaktraTextSecondary
+                                        )
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Delete", color = Color(0xFFEF4444)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        playlistToDelete = playlist
+                                    DropdownMenu(
+                                        expanded = menuExpanded,
+                                        onDismissRequest = { menuExpanded = false },
+                                        modifier = Modifier
+                                            .background(AlaktraCard)
+                                            .border(1.dp, AlaktraBorder, RoundedCornerShape(12.dp))
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Rename", color = AlaktraTextPrimary) },
+                                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = AlaktraMint) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                playlistToEdit = playlist
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Delete", color = Color(0xFFEF4444)) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444)) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                playlistToDelete = playlist
+                                            }
+                                        )
                                     }
-                                )
+                                }
                             }
                         }
                     }
@@ -217,18 +400,19 @@ fun LibraryScreen(
         var newPlaylistName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            containerColor = Color(0xFF242424),
-            title = { Text("Give your playlist a name", color = Color.White) },
+            containerColor = AlaktraCard,
+            title = { Text("Give your playlist a name", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = newPlaylistName,
                     onValueChange = { newPlaylistName = it },
-                    placeholder = { Text("My Playlist #1") },
+                    placeholder = { Text("My Playlist #1", color = AlaktraTextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF1DB954)
+                        focusedTextColor = AlaktraTextPrimary,
+                        unfocusedTextColor = AlaktraTextPrimary,
+                        focusedBorderColor = AlaktraMint,
+                        unfocusedBorderColor = AlaktraBorder
                     )
                 )
             },
@@ -242,14 +426,14 @@ fun LibraryScreen(
                             showCreateDialog = false
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
                 ) {
-                    Text("Create")
+                    Text("Create", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) {
-                    Text("Cancel", color = Color.LightGray)
+                    Text("Cancel", color = AlaktraTextSecondary)
                 }
             }
         )
@@ -260,17 +444,18 @@ fun LibraryScreen(
         var editName by remember { mutableStateOf(playlist.name) }
         AlertDialog(
             onDismissRequest = { playlistToEdit = null },
-            containerColor = Color(0xFF242424),
-            title = { Text("Rename Playlist", color = Color.White) },
+            containerColor = AlaktraCard,
+            title = { Text("Rename Playlist", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = editName,
                     onValueChange = { editName = it },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF1DB954)
+                        focusedTextColor = AlaktraTextPrimary,
+                        unfocusedTextColor = AlaktraTextPrimary,
+                        focusedBorderColor = AlaktraMint,
+                        unfocusedBorderColor = AlaktraBorder
                     )
                 )
             },
@@ -284,14 +469,14 @@ fun LibraryScreen(
                             playlistToEdit = null
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
                 ) {
-                    Text("Save")
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { playlistToEdit = null }) {
-                    Text("Cancel", color = Color.LightGray)
+                    Text("Cancel", color = AlaktraTextSecondary)
                 }
             }
         )
@@ -301,9 +486,9 @@ fun LibraryScreen(
     playlistToDelete?.let { playlist ->
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
-            containerColor = Color(0xFF242424),
-            title = { Text("Delete Playlist?", color = Color.White) },
-            text = { Text("Are you sure you want to delete \"${playlist.name}\"?", color = Color.LightGray) },
+            containerColor = AlaktraCard,
+            title = { Text("Delete Playlist?", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to delete \"${playlist.name}\"?", color = AlaktraTextSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -315,14 +500,15 @@ fun LibraryScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White)
                 ) {
-                    Text("Delete")
+                    Text("Delete", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { playlistToDelete = null }) {
-                    Text("Cancel", color = Color.LightGray)
+                    Text("Cancel", color = AlaktraTextSecondary)
                 }
             }
         )
     }
 }
+

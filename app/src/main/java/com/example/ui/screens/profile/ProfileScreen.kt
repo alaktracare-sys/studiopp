@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.AudioController
 import com.example.data.repository.MusicRepository
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,34 +48,38 @@ fun ProfileScreen(
     var showServerConfigDialog by remember { mutableStateOf(false) }
     var isConnected by remember { mutableStateOf<Boolean?>(null) }
     var isCheckingConnection by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+    var downloadedCount by remember { mutableIntStateOf(0) }
 
     // Upload dialog state
     var showUploadDialog by remember { mutableStateOf(false) }
 
-    // Check connection on entry
+    // Check connection on entry & load download count
     LaunchedEffect(Unit) {
         isCheckingConnection = true
         isConnected = repository.testConnection()
         isCheckingConnection = false
+        val songs = repository.getSongs()
+        downloadedCount = songs.count { it.isDownloaded || it.localPath != null }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Profile & Settings", color = Color.White) },
+                title = { Text("Profile & Settings", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = AlaktraTextPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AlaktraBackground)
             )
         },
-        containerColor = Color(0xFF121212)
+        containerColor = AlaktraBackground
     ) { padding ->
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -82,7 +89,7 @@ fun ProfileScreen(
                 .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Avatar
             Box(
@@ -90,13 +97,13 @@ fun ProfileScreen(
                 modifier = Modifier
                     .size(88.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF282828))
+                    .background(Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan)))
             ) {
                 Icon(
                     imageVector = Icons.Default.Person,
                     contentDescription = "Avatar",
-                    tint = Color.LightGray,
-                    modifier = Modifier.size(50.dp)
+                    tint = Color(0xFF041C12),
+                    modifier = Modifier.size(48.dp)
                 )
             }
 
@@ -105,18 +112,18 @@ fun ProfileScreen(
             Text(
                 text = user?.username ?: "Music Enthusiast",
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     fontSize = 22.sp
                 ),
-                color = Color.White
+                color = AlaktraTextPrimary
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
             Text(
-                text = user?.email ?: "guest@tailscale.local",
+                text = user?.email ?: "guest@alaktra.local",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
+                color = AlaktraTextSecondary
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -128,8 +135,9 @@ fun ProfileScreen(
             ) {
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -140,27 +148,28 @@ fun ProfileScreen(
                         Icon(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = null,
-                            tint = Color(0xFF1DB954),
+                            tint = AlaktraMint,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "$likedCount",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = AlaktraTextPrimary
                         )
                         Text(
-                            text = "Liked Songs",
+                            text = "Liked Tracks",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray
+                            color = AlaktraTextSecondary
                         )
                     }
                 }
 
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -171,31 +180,32 @@ fun ProfileScreen(
                         Icon(
                             imageVector = Icons.Default.FileDownload,
                             contentDescription = null,
-                            tint = Color(0xFF1DB954),
+                            tint = AlaktraCyan,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Offline",
+                            text = "$downloadedCount",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = AlaktraTextPrimary
                         )
                         Text(
-                            text = "Storage Ready",
+                            text = "Offline Tracks",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray
+                            color = AlaktraTextSecondary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Tailscale Server Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                shape = RoundedCornerShape(14.dp)
+                colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -220,24 +230,24 @@ fun ProfileScreen(
                             Text(
                                 text = "Tailscale Server",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
+                                color = AlaktraTextPrimary
                             )
                         }
 
                         IconButton(onClick = { showServerConfigDialog = true }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Server", tint = Color.LightGray)
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Server", tint = AlaktraMint)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
                         text = serverUrl,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF1DB954)
+                        color = AlaktraMint
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
                         text = when {
@@ -247,10 +257,10 @@ fun ProfileScreen(
                             else -> "Status unknown"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isConnected == true) Color.LightGray else Color(0xFFEF4444)
+                        color = if (isConnected == true) AlaktraTextSecondary else Color(0xFFEF4444)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedButton(
                         onClick = {
@@ -261,14 +271,15 @@ fun ProfileScreen(
                             }
                         },
                         enabled = !isCheckingConnection,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AlaktraTextPrimary),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder))),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         if (isCheckingConnection) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
+                            CircularProgressIndicator(color = AlaktraMint, modifier = Modifier.size(18.dp))
                         } else {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp), tint = AlaktraMint)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Ping Tailscale Server")
                         }
@@ -283,8 +294,9 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showUploadDialog = true },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
-                shape = RoundedCornerShape(14.dp)
+                colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -294,13 +306,13 @@ fun ProfileScreen(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF282828))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AlaktraSurface)
                     ) {
                         Icon(
                             imageVector = Icons.Default.CloudUpload,
                             contentDescription = null,
-                            tint = Color(0xFF1DB954),
+                            tint = AlaktraMint,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -309,35 +321,56 @@ fun ProfileScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Upload Music to Server",
+                            text = "Upload Track to Server",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = Color.White
+                            color = AlaktraTextPrimary
                         )
                         Text(
-                            text = "Add new MP3 and album art to your library",
+                            text = "Add new MP3 and album art to your server",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray
+                            color = AlaktraTextSecondary
                         )
                     }
 
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = AlaktraTextSecondary)
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // App Details Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "About Alaktra",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = AlaktraTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Version 1.0.0 (Release)\nBuilt with Kotlin Jetpack Compose & ExoPlayer.\nSecurely stream through Tailscale VPN mesh network.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AlaktraTextSecondary,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Logout Button
             Button(
-                onClick = {
-                    repository.authPreferences.clear()
-                    audioController.resetForLogout()
-                    onLogout()
-                },
+                onClick = { showLogoutConfirm = true },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF2E1010),
                     contentColor = Color(0xFFEF4444)
                 ),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
@@ -349,13 +382,41 @@ fun ProfileScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Log Out",
+                    text = "Sign Out",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
             }
 
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
+
+    // Logout Confirmation Dialog
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            containerColor = AlaktraCard,
+            title = { Text("Sign Out of Alaktra?", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
+            text = { Text("You will need to sign in again to access your music streams.", color = AlaktraTextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutConfirm = false
+                        repository.authPreferences.clear()
+                        audioController.resetForLogout()
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White)
+                ) {
+                    Text("Sign Out", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text("Cancel", color = AlaktraTextSecondary)
+                }
+            }
+        )
     }
 
     // Server Config Dialog
@@ -366,14 +427,14 @@ fun ProfileScreen(
 
         AlertDialog(
             onDismissRequest = { showServerConfigDialog = false },
-            containerColor = Color(0xFF242424),
-            title = { Text("Tailscale Server URL", color = Color.White) },
+            containerColor = AlaktraCard,
+            title = { Text("Tailscale Server URL", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text(
                         text = "Enter the Tailscale IP and port of your server:",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.LightGray
+                        color = AlaktraTextSecondary
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
@@ -384,10 +445,10 @@ fun ProfileScreen(
                         },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF1DB954),
-                            unfocusedBorderColor = Color.Gray
+                            focusedTextColor = AlaktraTextPrimary,
+                            unfocusedTextColor = AlaktraTextPrimary,
+                            focusedBorderColor = AlaktraMint,
+                            unfocusedBorderColor = AlaktraBorder
                         )
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -404,7 +465,7 @@ fun ProfileScreen(
                         },
                         enabled = !isPinging
                     ) {
-                        Text(if (isPinging) "Connecting..." else "Test Connection", color = Color(0xFF1DB954))
+                        Text(if (isPinging) "Connecting..." else "Test Connection", color = AlaktraMint)
                     }
                     if (pingResult != null) {
                         Text(
@@ -425,14 +486,14 @@ fun ProfileScreen(
                         }
                         showServerConfigDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
                 ) {
-                    Text("Save")
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showServerConfigDialog = false }) {
-                    Text("Cancel", color = Color.LightGray)
+                    Text("Cancel", color = AlaktraTextSecondary)
                 }
             }
         )
@@ -462,20 +523,20 @@ fun ProfileScreen(
 
         AlertDialog(
             onDismissRequest = { if (!isUploading) showUploadDialog = false },
-            containerColor = Color(0xFF242424),
-            title = { Text("Upload Song to Server", color = Color.White) },
+            containerColor = AlaktraCard,
+            title = { Text("Upload Track to Server", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = songTitle,
                         onValueChange = { songTitle = it },
-                        label = { Text("Song Title") },
+                        label = { Text("Track Title") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF1DB954),
-                            unfocusedBorderColor = Color.Gray
+                            focusedTextColor = AlaktraTextPrimary,
+                            unfocusedTextColor = AlaktraTextPrimary,
+                            focusedBorderColor = AlaktraMint,
+                            unfocusedBorderColor = AlaktraBorder
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -485,13 +546,13 @@ fun ProfileScreen(
                     OutlinedTextField(
                         value = songArtist,
                         onValueChange = { songArtist = it },
-                        label = { Text("Artist") },
+                        label = { Text("Artist Name") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF1DB954),
-                            unfocusedBorderColor = Color.Gray
+                            focusedTextColor = AlaktraTextPrimary,
+                            unfocusedTextColor = AlaktraTextPrimary,
+                            focusedBorderColor = AlaktraMint,
+                            unfocusedBorderColor = AlaktraBorder
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -505,14 +566,14 @@ fun ProfileScreen(
                     ) {
                         Text(
                             text = if (audioUri != null) "Audio file selected" else "Select MP3 Audio",
-                            color = if (audioUri != null) Color(0xFF1DB954) else Color.LightGray,
+                            color = if (audioUri != null) AlaktraMint else AlaktraTextSecondary,
                             style = MaterialTheme.typography.bodySmall
                         )
                         Button(
                             onClick = { audioPicker.launch("audio/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151))
+                            colors = ButtonDefaults.buttonColors(containerColor = AlaktraSurface)
                         ) {
-                            Text("Pick Audio")
+                            Text("Pick Audio", color = AlaktraTextPrimary)
                         }
                     }
 
@@ -525,14 +586,14 @@ fun ProfileScreen(
                     ) {
                         Text(
                             text = if (coverUri != null) "Cover selected" else "Select Cover Image",
-                            color = if (coverUri != null) Color(0xFF1DB954) else Color.LightGray,
+                            color = if (coverUri != null) AlaktraMint else AlaktraTextSecondary,
                             style = MaterialTheme.typography.bodySmall
                         )
                         Button(
                             onClick = { coverPicker.launch("image/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151))
+                            colors = ButtonDefaults.buttonColors(containerColor = AlaktraSurface)
                         ) {
-                            Text("Pick Cover")
+                            Text("Pick Cover", color = AlaktraTextPrimary)
                         }
                     }
 
@@ -593,20 +654,21 @@ fun ProfileScreen(
                         }
                     },
                     enabled = !isUploading,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
                 ) {
                     if (isUploading) {
-                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(18.dp))
+                        CircularProgressIndicator(color = Color(0xFF041C12), modifier = Modifier.size(18.dp))
                     } else {
-                        Text("Upload")
+                        Text("Upload", fontWeight = FontWeight.Bold)
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUploadDialog = false }, enabled = !isUploading) {
-                    Text("Close", color = Color.LightGray)
+                    Text("Close", color = AlaktraTextSecondary)
                 }
             }
         )
     }
 }
+

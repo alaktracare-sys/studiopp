@@ -1,6 +1,6 @@
 {
-  "name": "Already Music",
-  "description": "Music streaming, playlist management, and offline audio downloads.",
+  "name": "Alaktra",
+  "description": "Alaktra — Premium modern music streaming with offline downloads and playlist management.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

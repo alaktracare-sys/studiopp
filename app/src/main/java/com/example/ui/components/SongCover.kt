@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -11,11 +12,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import com.example.ui.theme.AlaktraCard
+import com.example.ui.theme.AlaktraMint
 
 @Composable
 fun SongCover(
@@ -24,26 +28,63 @@ fun SongCover(
     cornerRadius: Dp = 8.dp,
     modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(cornerRadius))
-            .background(Color(0xFF282828)),
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(Color(0xFF222433), AlaktraCard)
+                )
+            ),
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
-            model = imageUrl,
-            contentDescription = "Cover Art",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize()
-        )
-        if (imageUrl.isEmpty()) {
+        if (imageUrl.isNotBlank()) {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = "Song Artwork",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF1E202C)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = AlaktraMint.copy(alpha = 0.5f),
+                            modifier = Modifier.size(size / 2.2f)
+                        )
+                    }
+                },
+                error = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF1E202C)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(size / 2.2f)
+                        )
+                    }
+                }
+            )
+        } else {
             Icon(
                 imageVector = Icons.Default.MusicNote,
                 contentDescription = null,
                 tint = Color.Gray,
-                modifier = Modifier.size(size / 2)
+                modifier = Modifier.size(size / 2.2f)
             )
         }
     }
 }
+

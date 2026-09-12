@@ -1,6 +1,7 @@
 package com.example.ui.screens.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,12 +11,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -23,10 +25,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.AudioController
 import com.example.data.repository.MusicRepository
+import com.example.model.Playlist
 import com.example.model.Song
+import com.example.ui.components.AlaktraShimmerBox
 import com.example.ui.components.SongCover
 import com.example.ui.components.SongItemRow
 import com.example.ui.components.SongMenuBottomSheet
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -35,9 +40,12 @@ fun HomeScreen(
     repository: MusicRepository,
     audioController: AudioController,
     onNavigateToProfile: () -> Unit,
-    onNavigateToPlaylistSelect: (Song) -> Unit
+    onNavigateToPlaylistSelect: (Song) -> Unit,
+    onNavigateToPlaylist: (Int, String) -> Unit = { _, _ -> },
+    onNavigateToLikedSongs: () -> Unit = {}
 ) {
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var selectedSongForMenu by remember { mutableStateOf<Song?>(null) }
     val scope = rememberCoroutineScope()
@@ -58,11 +66,12 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         songs = repository.getSongs()
+        playlists = repository.getPlaylists()
         isLoading = false
     }
 
     Scaffold(
-        containerColor = Color(0xFF121212)
+        containerColor = AlaktraBackground
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -70,66 +79,186 @@ fun HomeScreen(
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 140.dp)
         ) {
-            // Header
+            // Alaktra Brand Header & Greeting
             item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 16.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = greeting,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 24.sp
-                            ),
-                            color = Color.White
-                        )
-                        if (user != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Alaktra Logo Badge
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(AlaktraSurface)
+                                .border(1.dp, AlaktraBorder, RoundedCornerShape(20.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(AlaktraMint)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = user.username,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF1DB954)
+                                text = "ALAKTRA",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 2.sp
+                                ),
+                                color = AlaktraTextPrimary
+                            )
+                        }
+
+                        // Profile / Settings Action
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(AlaktraSurface)
+                                .border(1.dp, AlaktraBorder, CircleShape)
+                                .clickable(onClick = onNavigateToProfile)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile & Settings",
+                                tint = AlaktraMint,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
 
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF282828))
-                            .clickable(onClick = onNavigateToProfile)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = greeting,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 26.sp
+                        ),
+                        color = AlaktraTextPrimary
+                    )
+
+                    if (user != null && user.username.isNotBlank()) {
+                        Text(
+                            text = user.username,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = AlaktraMint
                         )
                     }
                 }
             }
 
-            // Quick Featured Row
-            if (songs.isNotEmpty()) {
+            // Loading Skeleton
+            if (isLoading) {
                 item {
-                    Text(
-                        text = "Jump Back In",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier.padding(start = 20.dp, bottom = 12.dp, top = 8.dp)
-                    )
+                    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
+                            AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
+                            AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+                        AlaktraShimmerBox(modifier = Modifier.fillMaxWidth().height(160.dp), cornerRadius = 14.dp)
+                    }
+                }
+            } else if (songs.isEmpty()) {
+                // Empty state
+                item {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp, horizontal = 24.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(AlaktraSurface)
+                                .border(1.dp, AlaktraBorder, RoundedCornerShape(16.dp))
+                                .padding(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudQueue,
+                                contentDescription = null,
+                                tint = AlaktraMint,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No tracks available yet",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = AlaktraTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Connect to Tailscale or upload your first MP3 in the Profile tab.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AlaktraTextSecondary,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Quick Access 2-Column Grid
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                    ) {
+                        val quickItems = songs.take(6)
+                        val pairs = quickItems.chunked(2)
+
+                        pairs.forEach { pair ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                pair.forEach { songItem ->
+                                    val isCurrent = playbackState.currentSong?.id == songItem.id
+                                    QuickAccessTile(
+                                        song = songItem,
+                                        isPlaying = isCurrent && playbackState.isPlaying,
+                                        onClick = { audioController.playSong(songItem) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // Jump Back In (Horizontal artwork cards)
+                item {
+                    SectionHeader(title = "Jump Back In", subtitle = "Your top rotation")
 
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        items(songs.take(6)) { song ->
+                        items(songs.take(8)) { song ->
                             FeaturedSongCard(
                                 song = song,
                                 isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
@@ -138,32 +267,57 @@ fun HomeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
-            }
 
-            // All Tracks Header
-            item {
-                Text(
-                    text = "Recommended for You",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
-                    modifier = Modifier.padding(start = 20.dp, bottom = 8.dp)
-                )
-            }
+                // Made For You (Gradient Card Highlights)
+                if (songs.size > 2) {
+                    item {
+                        SectionHeader(title = "Made For You", subtitle = "Fresh discovery based on your taste")
 
-            if (isLoading) {
-                item {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                    ) {
-                        CircularProgressIndicator(color = Color(0xFF1DB954))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(songs.reversed().take(6)) { song ->
+                                MadeForYouCard(
+                                    song = song,
+                                    isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                    onClick = { audioController.playSong(song) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
-            } else {
+
+                // Playlists carousel if available
+                if (playlists.isNotEmpty()) {
+                    item {
+                        SectionHeader(title = "Your Playlists", subtitle = "Curated collections")
+
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(playlists) { pl ->
+                                PlaylistCard(
+                                    playlist = pl,
+                                    onClick = { onNavigateToPlaylist(pl.id, pl.name) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
+
+                // Trending & All Tracks List
+                item {
+                    SectionHeader(title = "Recommended Tracks", subtitle = "High fidelity streaming")
+                }
+
                 itemsIndexed(songs) { index, song ->
                     val isCurrent = playbackState.currentSong?.id == song.id
                     SongItemRow(
@@ -211,6 +365,68 @@ fun HomeScreen(
 }
 
 @Composable
+private fun SectionHeader(
+    title: String,
+    subtitle: String? = null
+) {
+    Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            ),
+            color = AlaktraTextPrimary
+        )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = AlaktraTextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickAccessTile(
+    song: Song,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .height(58.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isPlaying) Color(0xFF222436) else AlaktraSurface)
+            .border(1.dp, if (isPlaying) AlaktraMint.copy(alpha = 0.5f) else AlaktraBorder, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        SongCover(
+            imageUrl = song.coverUrl,
+            size = 58.dp,
+            cornerRadius = 8.dp
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = song.title,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 13.sp
+            ),
+            color = if (isPlaying) AlaktraMint else AlaktraTextPrimary,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)
+        )
+    }
+}
+
+@Composable
 private fun FeaturedSongCard(
     song: Song,
     isPlaying: Boolean,
@@ -218,15 +434,16 @@ private fun FeaturedSongCard(
 ) {
     Column(
         modifier = Modifier
-            .width(130.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1E1E1E))
+            .width(140.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(AlaktraSurface)
+            .border(1.dp, if (isPlaying) AlaktraMint.copy(alpha = 0.5f) else AlaktraBorder, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
         SongCover(
             imageUrl = song.coverUrl,
-            size = 110.dp,
+            size = 120.dp,
             cornerRadius = 10.dp
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -234,15 +451,122 @@ private fun FeaturedSongCard(
             text = song.title,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = if (isPlaying) Color(0xFF1DB954) else Color.White
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            color = if (isPlaying) AlaktraMint else AlaktraTextPrimary
         )
         Text(
             text = song.artist,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.LightGray
+            color = AlaktraTextSecondary
         )
     }
 }
+
+@Composable
+private fun MadeForYouCard(
+    song: Song,
+    isPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(160.dp)
+            .height(180.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF1F2236), AlaktraCard)
+                )
+            )
+            .border(1.dp, AlaktraBorder, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(AlaktraMint.copy(alpha = 0.2f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "DISCOVER",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = AlaktraMint
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            SongCover(
+                imageUrl = song.coverUrl,
+                size = 72.dp,
+                cornerRadius = 10.dp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = song.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = if (isPlaying) AlaktraMint else AlaktraTextPrimary
+            )
+            Text(
+                text = song.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = AlaktraTextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistCard(
+    playlist: Playlist,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(130.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(AlaktraSurface)
+            .border(1.dp, AlaktraBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(110.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF3B82F6), Color(0xFF1E1B4B))
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.QueueMusic,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(40.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = playlist.name,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            color = AlaktraTextPrimary
+        )
+        Text(
+            text = "${playlist.songCount} tracks",
+            style = MaterialTheme.typography.bodySmall,
+            color = AlaktraTextSecondary
+        )
+    }
+}
+

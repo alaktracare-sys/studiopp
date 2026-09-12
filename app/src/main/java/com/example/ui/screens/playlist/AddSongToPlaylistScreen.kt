@@ -1,5 +1,6 @@
 package com.example.ui.screens.playlist
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,10 +15,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.repository.MusicRepository
 import com.example.model.Song
 import com.example.ui.components.SongCover
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,20 +56,20 @@ fun AddSongToPlaylistScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Songs", color = Color.White) },
+                title = { Text("Add Tracks to Playlist", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = AlaktraTextPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AlaktraBackground)
             )
         },
-        containerColor = Color(0xFF121212)
+        containerColor = AlaktraBackground
     ) { padding ->
         Column(
             modifier = Modifier
@@ -75,28 +79,28 @@ fun AddSongToPlaylistScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search songs...") },
+                placeholder = { Text("Search tracks to add...", color = AlaktraTextMuted) },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = "Search", tint = Color.Gray)
+                    Icon(imageVector = Icons.Default.Search, contentDescription = "Search", tint = AlaktraTextSecondary)
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0xFF242424),
-                    unfocusedContainerColor = Color(0xFF242424),
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Transparent
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
             )
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 20.dp)
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
             ) {
                 items(filteredSongs) { song ->
                     val isAdded = playlistSongIds.contains(song.id)
@@ -105,22 +109,24 @@ fun AddSongToPlaylistScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(vertical = 8.dp)
                     ) {
-                        SongCover(imageUrl = song.coverUrl, size = 50.dp)
+                        SongCover(imageUrl = song.coverUrl, size = 52.dp)
 
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = song.title,
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyLarge
+                                color = AlaktraTextPrimary,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1
                             )
                             Text(
                                 text = song.artist,
-                                color = Color.LightGray,
-                                style = MaterialTheme.typography.bodySmall
+                                color = AlaktraTextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
                             )
                         }
 
@@ -140,7 +146,7 @@ fun AddSongToPlaylistScreen(
                             Icon(
                                 imageVector = if (isAdded) Icons.Default.Check else Icons.Default.Add,
                                 contentDescription = if (isAdded) "Added" else "Add",
-                                tint = if (isAdded) Color(0xFF1DB954) else Color.White
+                                tint = if (isAdded) AlaktraMint else AlaktraTextSecondary
                             )
                         }
                     }
@@ -149,3 +155,4 @@ fun AddSongToPlaylistScreen(
         }
     }
 }
+

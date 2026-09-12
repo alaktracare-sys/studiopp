@@ -9,7 +9,7 @@ import com.example.ui.screens.MainShell
 import com.example.ui.screens.auth.LoginScreen
 import com.example.ui.screens.auth.SignupScreen
 import com.example.ui.screens.auth.WelcomeScreen
-import com.example.ui.theme.AlreadyMusicTheme
+import com.example.ui.theme.AlaktraTheme
 
 enum class AuthDestination {
     WELCOME, LOGIN, SIGNUP, MAIN
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         val audioController = app.audioController
 
         setContent {
-            AlreadyMusicTheme {
+            AlaktraTheme {
                 val initialAuth = remember {
                     if (repository.authPreferences.isLoggedIn()) {
                         AuthDestination.MAIN

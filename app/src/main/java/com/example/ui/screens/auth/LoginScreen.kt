@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.MusicRepository
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,13 +49,13 @@ fun LoginScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Log In", color = Color.White) },
+                title = { Text("Sign In", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = AlaktraTextPrimary
                         )
                     }
                 },
@@ -62,14 +64,14 @@ fun LoginScreen(
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Tailscale Server Settings",
-                            tint = Color.White
+                            tint = AlaktraMint
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AlaktraBackground)
             )
         },
-        containerColor = Color(0xFF121212)
+        containerColor = AlaktraBackground
     ) { padding ->
         Column(
             modifier = Modifier
@@ -84,7 +86,7 @@ fun LoginScreen(
             // Tailscale Server connection chip
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1F2937),
+                color = AlaktraSurface,
                 modifier = Modifier
                     .clickable { showServerConfigDialog = true }
                     .padding(vertical = 4.dp)
@@ -102,7 +104,7 @@ fun LoginScreen(
                     Text(
                         text = "Tailscale: ${serverUrl.replace("http://", "").trimEnd('/')}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.LightGray
+                        color = AlaktraTextSecondary
                     )
                 }
             }
@@ -115,14 +117,16 @@ fun LoginScreen(
                 label = { Text("Username or Email") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = Color(0xFF1DB954),
-                    unfocusedLabelColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -140,19 +144,21 @@ fun LoginScreen(
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                             contentDescription = "Toggle password visibility",
-                            tint = Color.Gray
+                            tint = AlaktraTextSecondary
                         )
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = Color(0xFF1DB954),
-                    unfocusedLabelColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -189,19 +195,19 @@ fun LoginScreen(
                 },
                 enabled = !isLoading,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1DB954),
-                    contentColor = Color.Black
+                    containerColor = AlaktraMint,
+                    contentColor = Color(0xFF041C12)
                 ),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(color = Color(0xFF041C12), modifier = Modifier.size(24.dp))
                 } else {
                     Text(
-                        text = "Log In",
+                        text = "Sign In",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
@@ -215,12 +221,13 @@ fun LoginScreen(
                     repository.authPreferences.saveUser(
                         userId = 1,
                         username = "Guest User",
-                        email = "guest@tailscale.local"
+                        email = "guest@alaktra.local"
                     )
                     onLoginSuccess()
                 },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
-                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AlaktraTextSecondary),
+                border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder))),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -233,7 +240,7 @@ fun LoginScreen(
             TextButton(onClick = onNavigateToSignup) {
                 Text(
                     text = "Don't have an account? Sign Up",
-                    color = Color.LightGray
+                    color = AlaktraMint
                 )
             }
         }
@@ -246,14 +253,14 @@ fun LoginScreen(
 
         AlertDialog(
             onDismissRequest = { showServerConfigDialog = false },
-            containerColor = Color(0xFF242424),
-            title = { Text("Tailscale Server URL", color = Color.White) },
+            containerColor = AlaktraCard,
+            title = { Text("Tailscale Server URL", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text(
                         text = "Configure your Tailscale endpoint:",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.LightGray
+                        color = AlaktraTextSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -264,10 +271,10 @@ fun LoginScreen(
                         },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF1DB954),
-                            unfocusedBorderColor = Color.Gray
+                            focusedTextColor = AlaktraTextPrimary,
+                            unfocusedTextColor = AlaktraTextPrimary,
+                            focusedBorderColor = AlaktraMint,
+                            unfocusedBorderColor = AlaktraBorder
                         )
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -285,7 +292,7 @@ fun LoginScreen(
                             },
                             enabled = !testing
                         ) {
-                            Text(if (testing) "Testing..." else "Test Connection", color = Color(0xFF1DB954))
+                            Text(if (testing) "Testing..." else "Test Connection", color = AlaktraMint)
                         }
                     }
                     if (testResult != null) {
@@ -304,14 +311,14 @@ fun LoginScreen(
                         serverUrl = repository.authPreferences.getServerBaseUrl()
                         showServerConfigDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
                 ) {
-                    Text("Save")
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showServerConfigDialog = false }) {
-                    Text("Cancel", color = Color.LightGray)
+                    Text("Cancel", color = AlaktraTextSecondary)
                 }
             }
         )

@@ -16,7 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.repository.MusicRepository
+import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,20 +44,20 @@ fun SignupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sign Up", color = Color.White) },
+                title = { Text("Create Account", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = AlaktraTextPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF121212))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AlaktraBackground)
             )
         },
-        containerColor = Color(0xFF121212)
+        containerColor = AlaktraBackground
     ) { padding ->
         Column(
             modifier = Modifier
@@ -74,12 +76,16 @@ fun SignupScreen(
                 singleLine = true,
                 enabled = !showOtpField,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -88,17 +94,21 @@ fun SignupScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Email") },
+                label = { Text("Email Address") },
                 singleLine = true,
                 enabled = !showOtpField,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -113,12 +123,16 @@ fun SignupScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -133,12 +147,16 @@ fun SignupScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray
+                    focusedTextColor = AlaktraTextPrimary,
+                    unfocusedTextColor = AlaktraTextPrimary,
+                    focusedBorderColor = AlaktraMint,
+                    unfocusedBorderColor = AlaktraBorder,
+                    focusedLabelColor = AlaktraMint,
+                    unfocusedLabelColor = AlaktraTextSecondary,
+                    focusedContainerColor = AlaktraSurface,
+                    unfocusedContainerColor = AlaktraSurface
                 )
             )
 
@@ -147,16 +165,20 @@ fun SignupScreen(
                 OutlinedTextField(
                     value = otp,
                     onValueChange = { otp = it },
-                    label = { Text("Enter OTP code") },
+                    label = { Text("Enter 6-Digit OTP Code") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF1DB954),
-                        unfocusedBorderColor = Color.Gray
+                        focusedTextColor = AlaktraTextPrimary,
+                        unfocusedTextColor = AlaktraTextPrimary,
+                        focusedBorderColor = AlaktraCyan,
+                        unfocusedBorderColor = AlaktraBorder,
+                        focusedLabelColor = AlaktraCyan,
+                        unfocusedLabelColor = AlaktraTextSecondary,
+                        focusedContainerColor = AlaktraSurface,
+                        unfocusedContainerColor = AlaktraSurface
                     )
                 )
             }
@@ -168,7 +190,7 @@ fun SignupScreen(
 
             if (infoMessage != null) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(text = infoMessage!!, color = Color(0xFF1DB954), style = MaterialTheme.typography.bodySmall)
+                Text(text = infoMessage!!, color = AlaktraMint, style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -224,19 +246,19 @@ fun SignupScreen(
                 },
                 enabled = !isLoading,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1DB954),
-                    contentColor = Color.Black
+                    containerColor = AlaktraMint,
+                    contentColor = Color(0xFF041C12)
                 ),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(color = Color(0xFF041C12), modifier = Modifier.size(24.dp))
                 } else {
                     Text(
-                        text = if (!showOtpField) "Sign Up" else "Verify OTP & Continue",
+                        text = if (!showOtpField) "Create Account" else "Verify OTP & Continue",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
@@ -245,8 +267,9 @@ fun SignupScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             TextButton(onClick = onNavigateToLogin) {
-                Text(text = "Already have an account? Log In", color = Color.LightGray)
+                Text(text = "Already have an account? Sign In", color = AlaktraMint)
             }
         }
     }
 }
+

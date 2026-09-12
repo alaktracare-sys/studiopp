@@ -1,8 +1,10 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -10,7 +12,10 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -26,6 +31,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.PlaybackState
+import com.example.ui.theme.AlaktraCyan
+import com.example.ui.theme.AlaktraMint
+import kotlin.math.PI
 import kotlin.math.sin
 
 @Composable
@@ -42,16 +50,37 @@ fun MiniPlayer(
 
     var totalDrag by remember { mutableFloatStateOf(0f) }
 
-    // Wave animation phase
-    val infiniteTransition = rememberInfiniteTransition(label = "wave")
+    // Wave animation controller: 2-second repeat loop (equivalent to Flutter's AnimationController..repeat())
+    val infiniteTransition = rememberInfiniteTransition(label = "liquid_wave")
     val wavePhase by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(durationMillis = 2000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "phase"
+        label = "wave_phase"
+    )
+
+    // Dynamic palette colors with 500ms smooth transition (matching Flutter AnimatedContainer)
+    val color1 by animateColorAsState(
+        targetValue = if (playbackState.dominantColor != Color.Unspecified) {
+            playbackState.dominantColor
+        } else {
+            AlaktraMint
+        },
+        animationSpec = tween(500),
+        label = "color1"
+    )
+
+    val color2 by animateColorAsState(
+        targetValue = if (playbackState.secondaryColor != Color.Unspecified) {
+            playbackState.secondaryColor
+        } else {
+            AlaktraCyan
+        },
+        animationSpec = tween(500),
+        label = "color2"
     )
 
     val progressFraction = remember(playbackState.currentPositionMs, playbackState.durationMs) {
@@ -62,30 +91,26 @@ fun MiniPlayer(
         }
     }
 
+    val pillShape = RoundedCornerShape(100.dp)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .height(64.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        playbackState.dominantColor.copy(alpha = 0.9f),
-                        playbackState.secondaryColor.copy(alpha = 0.95f),
-                        Color(0xFF1E1E1E)
-                    )
-                )
-            )
+            .padding(horizontal = 14.dp, vertical = 4.dp)
+            .height(72.dp)
+            .clip(pillShape)
+            .background(Color.Black.copy(alpha = 0.82f))
+            .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.16f), shape = pillShape)
             .draggable(
                 state = rememberDraggableState { delta ->
                     totalDrag += delta
                 },
                 orientation = Orientation.Horizontal,
-                onDragStopped = {
-                    if (totalDrag < -100f) {
+                onDragStopped = { velocity ->
+                    // Swipe to change song (matching Flutter onHorizontalDragEnd)
+                    if (velocity < -300f || totalDrag < -50f) {
                         onNext()
-                    } else if (totalDrag > 100f) {
+                    } else if (velocity > 300f || totalDrag > 50f) {
                         onPrevious()
                     }
                     totalDrag = 0f
@@ -93,117 +118,119 @@ fun MiniPlayer(
             )
             .clickable(onClick = onExpand)
     ) {
-        // Liquid Wave Progress at the bottom
+        // 🔥 LIQUID FILL (matching Flutter's LiquidLeftClipper & AnimatedContainer)
         Canvas(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .align(Alignment.BottomCenter)
+                .fillMaxSize()
+                .clip(pillShape)
         ) {
             val width = size.width
             val height = size.height
+            val fillWidth = width * progressFraction
 
-            // Background track
-            drawRect(
-                color = Color.White.copy(alpha = 0.2f),
-                size = size
-            )
+            if (fillWidth > 0f) {
+                val waveHeight = 5.dp.toPx()
+                val waveLength = 64.dp.toPx()
 
-            // Active progress wave
-            val progressWidth = width * progressFraction
-            if (progressWidth > 0) {
-                val path = Path()
-                path.moveTo(0f, height)
-                path.lineTo(0f, 0f)
+                val path = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(fillWidth, 0f)
 
-                val points = 20
-                for (i in 0..points) {
-                    val x = (progressWidth / points) * i
-                    val y = if (playbackState.isPlaying) {
-                        (sin(wavePhase + (i * 0.4f)) * 2f).toFloat()
-                    } else {
-                        0f
+                    // Sinusoidal wave across the height of the pill
+                    val steps = height.toInt().coerceAtLeast(10)
+                    for (i in 0..steps) {
+                        val y = (height / steps) * i
+                        val dx = (waveHeight * sin((y / waveLength * 2 * PI) + (wavePhase * 2 * PI))).toFloat()
+                        lineTo(fillWidth + dx, y)
                     }
-                    path.lineTo(x, y)
-                }
 
-                path.lineTo(progressWidth, height)
-                path.close()
+                    lineTo(0f, height)
+                    close()
+                }
 
                 drawPath(
                     path = path,
-                    color = Color(0xFF1DB954)
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            color1.copy(alpha = 0.8f),
+                            color2.copy(alpha = 0.8f)
+                        ),
+                        startX = 0f,
+                        endX = width
+                    )
                 )
             }
         }
 
+        // 🔥 CONTENT
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // COVER (increased size for better visibility)
             SongCover(
                 imageUrl = song.coverUrl,
                 size = 46.dp,
-                cornerRadius = 8.dp
+                cornerRadius = 14.dp
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            // TITLE + ARTIST
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.Start,
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text = song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp
+                    fontWeight = FontWeight.W600,
+                    fontSize = 15.sp
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = song.artist,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = Color(0xFFB3B3B3),
+                    color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp
                 )
             }
 
+            // LIKE BUTTON
             IconButton(
                 onClick = onLikeToggle,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(42.dp)
             ) {
                 Icon(
                     imageVector = if (song.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Like",
-                    tint = if (song.isLiked) Color(0xFF1DB954) else Color.White,
-                    modifier = Modifier.size(20.dp)
+                    contentDescription = if (song.isLiked) "Unlike" else "Like",
+                    tint = if (song.isLiked) Color(0xFFC62828) else Color.White,
+                    modifier = Modifier.size(26.dp)
                 )
             }
 
+            // PLAY / PAUSE BUTTON
             IconButton(
                 onClick = onTogglePlay,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
                     tint = Color.White,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(30.dp)
                 )
             }
 
-            IconButton(
-                onClick = onNext,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SkipNext,
-                    contentDescription = "Next",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            Spacer(modifier = Modifier.width(8.dp))
         }
     }
 }
+
+

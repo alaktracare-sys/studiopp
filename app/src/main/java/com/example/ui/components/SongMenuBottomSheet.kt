@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,11 +10,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.model.Song
+import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,14 +31,24 @@ fun SongMenuBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E1E1E),
-        contentColor = Color.White,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        containerColor = AlaktraCard,
+        contentColor = AlaktraTextPrimary,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 12.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(AlaktraTextMuted.copy(alpha = 0.5f))
+            )
+        }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .padding(horizontal = 22.dp, vertical = 8.dp)
         ) {
             // Header with song info
             Row(
@@ -43,30 +57,32 @@ fun SongMenuBottomSheet(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
             ) {
-                SongCover(imageUrl = song.coverUrl, size = 52.dp)
+                SongCover(imageUrl = song.coverUrl, size = 56.dp, cornerRadius = 12.dp)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = song.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                        color = AlaktraTextPrimary,
                         maxLines = 1
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = song.artist,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.LightGray,
+                        color = AlaktraTextSecondary,
                         maxLines = 1
                     )
                 }
             }
 
-            HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(bottom = 8.dp))
+            HorizontalDivider(color = AlaktraBorder, modifier = Modifier.padding(bottom = 10.dp))
 
             // Action: Add to Queue
             MenuActionRow(
                 icon = Icons.Default.QueueMusic,
                 title = "Add to Queue",
+                tint = AlaktraTextPrimary,
                 onClick = {
                     onAddToQueue()
                     onDismiss()
@@ -77,6 +93,7 @@ fun SongMenuBottomSheet(
             MenuActionRow(
                 icon = Icons.Default.PlaylistAdd,
                 title = "Add to Playlist",
+                tint = AlaktraTextPrimary,
                 onClick = {
                     onAddToPlaylist()
                     onDismiss()
@@ -87,7 +104,7 @@ fun SongMenuBottomSheet(
             MenuActionRow(
                 icon = if (isDownloaded) Icons.Default.DeleteOutline else Icons.Default.ArrowDownward,
                 title = if (isDownloaded) "Remove Download" else "Download Offline",
-                tint = if (isDownloaded) Color(0xFFEF4444) else Color(0xFF1DB954),
+                tint = if (isDownloaded) Color(0xFFFF5252) else AlaktraMint,
                 onClick = {
                     onToggleDownload()
                     onDismiss()
@@ -103,22 +120,31 @@ fun SongMenuBottomSheet(
 private fun MenuActionRow(
     icon: ImageVector,
     title: String,
-    tint: Color = Color.White,
+    tint: Color = AlaktraTextPrimary,
     onClick: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp)
+            .padding(vertical = 12.dp, horizontal = 8.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(24.dp)
-        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(AlaktraSurface),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp)
+            )
+        }
         Spacer(modifier = Modifier.width(16.dp))
         Text(
             text = title,
@@ -127,3 +153,4 @@ private fun MenuActionRow(
         )
     }
 }
+
