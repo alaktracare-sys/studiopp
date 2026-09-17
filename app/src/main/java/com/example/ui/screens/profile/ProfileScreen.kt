@@ -1,8 +1,5 @@
 package com.example.ui.screens.profile
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,16 +48,20 @@ fun ProfileScreen(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var downloadedCount by remember { mutableIntStateOf(0) }
 
-    // Upload dialog state
-    var showUploadDialog by remember { mutableStateOf(false) }
+    // Listening history state
+    var showHistoryPanel by remember { mutableStateOf(false) }
+    val historyList by repository.listeningHistory.collectAsState(initial = emptyList())
 
-    // Check connection on entry & load download count
+    // Check connection on entry & load download count & seed history if empty
     LaunchedEffect(Unit) {
         isCheckingConnection = true
         isConnected = repository.testConnection()
         isCheckingConnection = false
         val songs = repository.getSongs()
         downloadedCount = songs.count { it.isDownloaded || it.localPath != null }
+        if (songs.isNotEmpty()) {
+            repository.seedHistoryIfEmpty(songs)
+        }
     }
 
     Scaffold(
@@ -289,52 +290,11 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Upload Music Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showUploadDialog = true },
-                colors = CardDefaults.cardColors(containerColor = AlaktraCard),
-                shape = RoundedCornerShape(16.dp),
-                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(AlaktraSurface)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = null,
-                            tint = AlaktraMint,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Upload Track to Server",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = AlaktraTextPrimary
-                        )
-                        Text(
-                            text = "Add new MP3 and album art to your server",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AlaktraTextSecondary
-                        )
-                    }
-
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = AlaktraTextSecondary)
-                }
-            }
+            // Listening History Summary Card
+            ListeningHistorySummaryCard(
+                historyList = historyList,
+                onOpenFullHistory = { showHistoryPanel = true }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -499,175 +459,13 @@ fun ProfileScreen(
         )
     }
 
-    // Upload Song Dialog
-    if (showUploadDialog) {
-        var songTitle by remember { mutableStateOf("") }
-        var songArtist by remember { mutableStateOf("") }
-        var audioUri by remember { mutableStateOf<Uri?>(null) }
-        var coverUri by remember { mutableStateOf<Uri?>(null) }
-        var isUploading by remember { mutableStateOf(false) }
-        var uploadError by remember { mutableStateOf<String?>(null) }
-        var uploadSuccess by remember { mutableStateOf(false) }
-
-        val audioPicker = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            audioUri = uri
-        }
-
-        val coverPicker = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            coverUri = uri
-        }
-
-        AlertDialog(
-            onDismissRequest = { if (!isUploading) showUploadDialog = false },
-            containerColor = AlaktraCard,
-            title = { Text("Upload Track to Server", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = songTitle,
-                        onValueChange = { songTitle = it },
-                        label = { Text("Track Title") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = AlaktraTextPrimary,
-                            unfocusedTextColor = AlaktraTextPrimary,
-                            focusedBorderColor = AlaktraMint,
-                            unfocusedBorderColor = AlaktraBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = songArtist,
-                        onValueChange = { songArtist = it },
-                        label = { Text("Artist Name") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = AlaktraTextPrimary,
-                            unfocusedTextColor = AlaktraTextPrimary,
-                            focusedBorderColor = AlaktraMint,
-                            unfocusedBorderColor = AlaktraBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (audioUri != null) "Audio file selected" else "Select MP3 Audio",
-                            color = if (audioUri != null) AlaktraMint else AlaktraTextSecondary,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Button(
-                            onClick = { audioPicker.launch("audio/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = AlaktraSurface)
-                        ) {
-                            Text("Pick Audio", color = AlaktraTextPrimary)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (coverUri != null) "Cover selected" else "Select Cover Image",
-                            color = if (coverUri != null) AlaktraMint else AlaktraTextSecondary,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Button(
-                            onClick = { coverPicker.launch("image/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = AlaktraSurface)
-                        ) {
-                            Text("Pick Cover", color = AlaktraTextPrimary)
-                        }
-                    }
-
-                    if (uploadError != null) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = uploadError!!, color = Color(0xFFEF4444), fontSize = 12.sp)
-                    }
-
-                    if (uploadSuccess) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(text = "Song uploaded successfully to Tailscale server!", color = Color(0xFF10B981), fontSize = 12.sp)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (songTitle.isBlank() || songArtist.isBlank() || audioUri == null || coverUri == null) {
-                            uploadError = "Please fill in title, artist, audio and cover."
-                            return@Button
-                        }
-                        isUploading = true
-                        uploadError = null
-                        scope.launch {
-                            try {
-                                val audioBytes = context.contentResolver.openInputStream(audioUri!!)?.use { it.readBytes() }
-                                val coverBytes = context.contentResolver.openInputStream(coverUri!!)?.use { it.readBytes() }
-
-                                if (audioBytes == null || coverBytes == null) {
-                                    uploadError = "Failed to read selected files"
-                                    isUploading = false
-                                    return@launch
-                                }
-
-                                val result = repository.uploadSong(
-                                    title = songTitle,
-                                    artist = songArtist,
-                                    audioBytes = audioBytes,
-                                    audioFileName = "track.mp3",
-                                    coverBytes = coverBytes,
-                                    coverFileName = "cover.jpg"
-                                )
-
-                                isUploading = false
-                                if (result.isSuccess) {
-                                    uploadSuccess = true
-                                    songTitle = ""
-                                    songArtist = ""
-                                    audioUri = null
-                                    coverUri = null
-                                } else {
-                                    uploadError = result.exceptionOrNull()?.message ?: "Upload failed"
-                                }
-                            } catch (e: Exception) {
-                                isUploading = false
-                                uploadError = e.message ?: "Upload error"
-                            }
-                        }
-                    },
-                    enabled = !isUploading,
-                    colors = ButtonDefaults.buttonColors(containerColor = AlaktraMint, contentColor = Color(0xFF041C12))
-                ) {
-                    if (isUploading) {
-                        CircularProgressIndicator(color = Color(0xFF041C12), modifier = Modifier.size(18.dp))
-                    } else {
-                        Text("Upload", fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUploadDialog = false }, enabled = !isUploading) {
-                    Text("Close", color = AlaktraTextSecondary)
-                }
-            }
+    // Full Listening History Sheet
+    if (showHistoryPanel) {
+        FullListeningHistorySheet(
+            historyList = historyList,
+            repository = repository,
+            audioController = audioController,
+            onDismiss = { showHistoryPanel = false }
         )
     }
 }

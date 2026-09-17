@@ -2,9 +2,11 @@ package com.example.ui.screens.player
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -29,6 +31,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.example.audio.AudioController
 import com.example.audio.PlaybackState
@@ -59,6 +62,8 @@ fun PlayerScreen(
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showCreditsDialog by remember { mutableStateOf(false) }
     val sleepTimerSeconds by audioController.sleepTimerRemainingSeconds.collectAsState()
+    val isSleepTimerActive by audioController.isSleepTimerActive.collectAsState()
+    val stopAtEndOfTrack by audioController.stopAtEndOfTrack.collectAsState()
 
     // Dynamic atmospheric gradient extracted from song picture (matching screenshot):
     // Pure pitch black at top (behind header and upper artwork),
@@ -87,37 +92,95 @@ fun PlayerScreen(
         1.0f to Color(0xFF080808)
     )
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .background(backgroundBrush)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {} // Absorb all taps to guarantee zero ghost clicks to background views
+            )
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
+        val screenWidth = maxWidth
+        val screenHeight = maxHeight
+
+        // Fully variable fluid scales based on actual phone height and width:
+        // Reference baseline: 390dp x 800dp. We normalize scale factors between small phones (e.g. 560dp) and tall devices.
+        val heightScale = (screenHeight.value / 800f).coerceIn(0.68f, 1.25f)
+        val widthScale = (screenWidth.value / 390f).coerceIn(0.75f, 1.25f)
+
+        // Dynamic, variable artwork size directly calculated from screen dimensions:
+        // Takes at most 72% of width and 32% of available height, scaling continuously
+        val maxArtWidth = screenWidth * 0.72f
+        val maxArtHeight = screenHeight * (0.31f * heightScale.coerceIn(0.85f, 1.05f))
+        val artworkSize = min(maxArtWidth, maxArtHeight).coerceIn(120.dp, 300.dp)
+
+        // Proportional control sizing
+        val playButtonSize = (58.dp * heightScale).coerceIn(44.dp, 66.dp)
+        val playIconSize = (32.dp * heightScale).coerceIn(24.dp, 38.dp)
+        val skipButtonSize = (42.dp * heightScale).coerceIn(34.dp, 48.dp)
+        val skipIconSize = (32.dp * heightScale).coerceIn(24.dp, 36.dp)
+        val sideControlSize = (38.dp * heightScale).coerceIn(32.dp, 42.dp)
+        val sideIconSize = (21.dp * heightScale).coerceIn(17.dp, 24.dp)
+        val topActionSize = (38.dp * heightScale).coerceIn(32.dp, 42.dp)
+        val topDownArrowSize = (30.dp * heightScale).coerceIn(24.dp, 34.dp)
+        val topMoreIconSize = (23.dp * heightScale).coerceIn(18.dp, 26.dp)
+
+        // Variable paddings and vertical spacing
+        val horizontalPadding = (18.dp * widthScale).coerceIn(10.dp, 24.dp)
+        val topBarVerticalPadding = (6.dp * heightScale).coerceIn(2.dp, 10.dp)
+        val pelletVerticalPadding = (6.dp * heightScale).coerceIn(4.dp, 8.dp)
+        val pelletOuterVerticalPadding = (3.dp * heightScale).coerceIn(1.dp, 5.dp)
+        val artworkVerticalPadding = (4.dp * heightScale).coerceIn(2.dp, 8.dp)
+        val controlsVerticalPadding = (4.dp * heightScale).coerceIn(2.dp, 8.dp)
+        val bottomRowVerticalPadding = (4.dp * heightScale).coerceIn(2.dp, 8.dp)
+        val titleSectionBottomSpacing = (8.dp * heightScale).coerceIn(4.dp, 14.dp)
+        val sliderBottomSpacing = (6.dp * heightScale).coerceIn(3.dp, 10.dp)
+        val bottomExtraSpacing = (6.dp * heightScale).coerceIn(2.dp, 10.dp)
+
+        // Variable typography scaled to device size
+        val titleFontSize = (19.sp * heightScale.coerceIn(0.82f, 1.15f))
+        val artistFontSize = (13.sp * heightScale.coerceIn(0.85f, 1.15f))
+        val topSubheaderFontSize = (11.sp * heightScale.coerceIn(0.85f, 1.15f))
+        val topHeaderFontSize = (13.sp * heightScale.coerceIn(0.85f, 1.15f))
+        val pelletHeaderFontSize = (11.sp * heightScale.coerceIn(0.85f, 1.15f))
+        val pelletSubFontSize = (10.sp * heightScale.coerceIn(0.85f, 1.15f))
+        val likeBadgeSize = (34.dp * heightScale).coerceIn(28.dp, 38.dp)
+        val likeIconContainerSize = (23.dp * heightScale).coerceIn(19.dp, 26.dp)
+        val likeIconSize = (13.dp * heightScale).coerceIn(11.dp, 15.dp)
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
         ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = 520.dp)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = horizontalPadding)
+            ) {
             // Top Bar
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 10.dp)
+                    .padding(vertical = topBarVerticalPadding)
             ) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(topActionSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Minimize Player",
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(topDownArrowSize)
                     )
                 }
 
@@ -125,7 +188,7 @@ fun PlayerScreen(
                     Text(
                         text = "Playing from Playlist",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp,
+                            fontSize = topSubheaderFontSize,
                             fontWeight = FontWeight.Medium
                         ),
                         color = Color.White.copy(alpha = 0.7f)
@@ -134,7 +197,7 @@ fun PlayerScreen(
                         text = if (song.isLiked) "Liked Songs" else "Alaktra Stream",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = topHeaderFontSize
                         ),
                         color = Color.White,
                         maxLines = 1,
@@ -146,13 +209,13 @@ fun PlayerScreen(
                 Box {
                     IconButton(
                         onClick = { showMenu = true },
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(topActionSize)
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "More Options",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(topMoreIconSize)
                         )
                     }
 
@@ -226,8 +289,8 @@ fun PlayerScreen(
                         // Sleep timer
                         DropdownMenuItem(
                             text = {
-                                val label = if (sleepTimerSeconds != null) {
-                                    "Sleep timer (${sleepTimerSeconds!! / 60}m)"
+                                val label = if (isSleepTimerActive && sleepTimerSeconds != null) {
+                                    if (stopAtEndOfTrack) "Sleep timer (End of track)" else "Sleep timer (${(sleepTimerSeconds!! + 59) / 60}m)"
                                 } else {
                                     "Sleep timer"
                                 }
@@ -237,12 +300,35 @@ fun PlayerScreen(
                                 Icon(
                                     imageVector = Icons.Default.Timer,
                                     contentDescription = null,
-                                    tint = if (sleepTimerSeconds != null) AlaktraMint else AlaktraTextPrimary
+                                    tint = if (isSleepTimerActive) AlaktraMint else AlaktraTextPrimary
                                 )
                             },
                             onClick = {
                                 showMenu = false
                                 showSleepTimerDialog = true
+                            }
+                        )
+
+                        // Share
+                        DropdownMenuItem(
+                            text = { Text("Share", color = AlaktraTextPrimary) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = null,
+                                    tint = AlaktraTextPrimary
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "Listening to ${song.title} by ${song.artist} on Alaktra Stream"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share song via"))
                             }
                         )
                     }
@@ -253,11 +339,11 @@ fun PlayerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 8.dp, vertical = pelletOuterVerticalPadding)
                     .clip(CircleShape)
                     .background(Color(0xFF263328).copy(alpha = 0.85f))
                     .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
-                    .padding(horizontal = 18.dp, vertical = 7.dp)
+                    .padding(horizontal = 16.dp, vertical = pelletVerticalPadding)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -269,13 +355,13 @@ fun PlayerScreen(
                             text = "Lyrics",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = pelletHeaderFontSize
                             ),
                             color = Color.White
                         )
                         Text(
                             text = "${song.title} • ${song.artist}",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = pelletSubFontSize),
                             color = Color.White.copy(alpha = 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -285,40 +371,38 @@ fun PlayerScreen(
                         imageVector = Icons.Default.Mic,
                         contentDescription = "Lyrics",
                         tint = Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(0.1f))
+            Spacer(modifier = Modifier.weight(1f, fill = false))
 
-            // Large Artwork with subtle rounded corners (matching screenshot)
+            // Artwork with definite auto-adjusted proportion
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .size(artworkSize)
+                    .padding(vertical = artworkVerticalPadding)
             ) {
-                // Artwork container
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .shadow(16.dp, RoundedCornerShape(8.dp))
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .fillMaxSize()
+                        .shadow(16.dp, RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
                         .background(AlaktraCard)
                 ) {
                     SongCover(
                         imageUrl = song.coverUrl,
-                        size = 380.dp,
-                        cornerRadius = 8.dp,
+                        size = artworkSize,
+                        cornerRadius = 10.dp,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.weight(1f, fill = false))
 
             // Title, Artist, and Green Like Checkmark
             Row(
@@ -332,7 +416,7 @@ fun PlayerScreen(
                         text = song.title,
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 22.sp
+                            fontSize = titleFontSize
                         ),
                         color = Color.White,
                         maxLines = 1,
@@ -342,7 +426,7 @@ fun PlayerScreen(
                     Text(
                         text = song.artist,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 15.sp,
+                            fontSize = artistFontSize,
                             fontWeight = FontWeight.Normal
                         ),
                         color = Color.White.copy(alpha = 0.7f),
@@ -354,12 +438,12 @@ fun PlayerScreen(
                 // Compact circular like badge (smaller checkmark button)
                 IconButton(
                     onClick = onLikeToggle,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(likeBadgeSize)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(likeIconContainerSize)
                             .clip(CircleShape)
                             .background(if (song.isLiked) Color(0xFF1DB954) else Color.White.copy(alpha = 0.15f))
                     ) {
@@ -367,13 +451,13 @@ fun PlayerScreen(
                             imageVector = if (song.isLiked) Icons.Default.Check else Icons.Default.FavoriteBorder,
                             contentDescription = if (song.isLiked) "Liked" else "Like",
                             tint = if (song.isLiked) Color.Black else Color.White,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(likeIconSize)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(titleSectionBottomSpacing))
 
             // Custom Duration Bar (matching uploaded screenshot)
             CustomDurationBar(
@@ -383,39 +467,39 @@ fun PlayerScreen(
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(sliderBottomSpacing))
 
-            // Playback Controls Row: Shuffle, Prev, Play/Pause, Next, Timer
+            // Playback Controls Row: Shuffle, Prev, Play/Pause, Next, Loop
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .padding(horizontal = 8.dp, vertical = controlsVerticalPadding)
             ) {
                 // Shuffle
                 IconButton(
                     onClick = { audioController.toggleShuffle() },
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(sideControlSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Shuffle,
                         contentDescription = "Shuffle",
                         tint = if (playbackState.isShuffle) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(sideIconSize)
                     )
                 }
 
                 // Previous
                 IconButton(
                     onClick = { audioController.previous() },
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(skipButtonSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
                         contentDescription = "Previous Track",
                         tint = Color.White,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(skipIconSize)
                     )
                 }
 
@@ -423,7 +507,7 @@ fun PlayerScreen(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(68.dp)
+                        .size(playButtonSize)
                         .clip(CircleShape)
                         .background(Color.White)
                         .clickable { audioController.togglePlayPause() }
@@ -432,27 +516,27 @@ fun PlayerScreen(
                         imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
                         tint = Color.Black,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(playIconSize)
                     )
                 }
 
                 // Next
                 IconButton(
                     onClick = { audioController.next() },
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(skipButtonSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Next Track",
                         tint = Color.White,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(skipIconSize)
                     )
                 }
 
-                // Loop / Repeat button (next to forward button, toggles OFF -> ALL -> ONE -> OFF)
+                // Loop / Repeat button
                 IconButton(
                     onClick = { audioController.toggleLoop() },
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(sideControlSize)
                 ) {
                     val isLoopActive = playbackState.loopMode != com.example.audio.LoopMode.OFF
                     val loopIcon = if (playbackState.loopMode == com.example.audio.LoopMode.ONE) {
@@ -464,96 +548,96 @@ fun PlayerScreen(
                         imageVector = loopIcon,
                         contentDescription = "Loop Mode",
                         tint = if (isLoopActive) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(sideIconSize)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.weight(1f, fill = false))
 
-            // Center-aligned small pellet below play button with credits of the song
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.10f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.18f), CircleShape)
-                    .clickable { showCreditsDialog = true }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Credits",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Credits • ${song.artist}",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = Color.White.copy(alpha = 0.9f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Bottom row: Share in left bottom corner, Queue in right bottom corner
+            // Bottom row: Sleep Timer in left corner, Credits pellet in center, Queue in right corner
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(horizontal = 4.dp, vertical = bottomRowVerticalPadding)
             ) {
-                // Share button in left bottom corner
+                // Sleep Timer button in left corner (replaces Share)
                 IconButton(
-                    onClick = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(
-                                Intent.EXTRA_TEXT,
-                                "Listening to ${song.title} by ${song.artist} on Alaktra Stream"
+                    onClick = { showSleepTimerDialog = true },
+                    modifier = Modifier.size(sideControlSize)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = "Sleep Timer",
+                            tint = if (isSleepTimerActive) AlaktraMint else Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(sideIconSize)
+                        )
+                        if (isSleepTimerActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .align(Alignment.TopEnd)
+                                    .clip(CircleShape)
+                                    .background(AlaktraMint)
                             )
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share song via"))
-                    },
-                    modifier = Modifier.size(44.dp)
+                    }
+                }
+
+                // Credits pellet shifted to the center of the bottom row, level with sleep timer and queue
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                        .clickable { showCreditsDialog = true }
+                        .padding(horizontal = 12.dp, vertical = pelletVerticalPadding)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share",
-                        tint = Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Credits",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(sideIconSize * 0.58f)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Credits • ${song.artist}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = pelletSubFontSize,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = Color.White.copy(alpha = 0.9f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 // Queue button in right bottom corner
                 IconButton(
                     onClick = { showQueueSheet = true },
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(sideControlSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.QueueMusic,
                         contentDescription = "View Queue",
                         tint = Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(sideIconSize)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(0.12f))
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(bottomExtraSpacing))
         }
+    }
 
         // Sleep Timer Selection Dialog
         if (showSleepTimerDialog) {
@@ -562,32 +646,167 @@ fun PlayerScreen(
                 containerColor = AlaktraCard,
                 titleContentColor = AlaktraTextPrimary,
                 textContentColor = AlaktraTextSecondary,
-                title = { Text("Sleep Timer") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = null,
+                            tint = AlaktraMint,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Sleep Timer", style = MaterialTheme.typography.titleLarge)
+                    }
+                },
                 text = {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    ) {
+                        // If an active timer is running, show countdown card and quick extension buttons
+                        if (isSleepTimerActive && sleepTimerSeconds != null) {
+                            val remSec = sleepTimerSeconds ?: 0
+                            val min = remSec / 60
+                            val sec = remSec % 60
+                            val displayTime = if (stopAtEndOfTrack) {
+                                "Playback stops at the end of this track"
+                            } else {
+                                "Audio will stop in %d min %02d sec".format(Locale.US, min, sec)
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = AlaktraMint.copy(alpha = 0.12f)),
+                                border = BorderStroke(1.dp, AlaktraMint.copy(alpha = 0.4f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = displayTime,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = AlaktraMint
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                audioController.addMinutesToSleepTimer(5)
+                                                Toast.makeText(context, "+5 minutes added to sleep timer", Toast.LENGTH_SHORT).show()
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            border = BorderStroke(1.dp, AlaktraMint.copy(alpha = 0.6f))
+                                        ) {
+                                            Text("+5 min", color = AlaktraMint, fontSize = 12.sp)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                audioController.addMinutesToSleepTimer(15)
+                                                Toast.makeText(context, "+15 minutes added to sleep timer", Toast.LENGTH_SHORT).show()
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            border = BorderStroke(1.dp, AlaktraMint.copy(alpha = 0.6f))
+                                        ) {
+                                            Text("+15 min", color = AlaktraMint, fontSize = 12.sp)
+                                        }
+
+                                        TextButton(
+                                            onClick = {
+                                                audioController.cancelSleepTimer()
+                                                showSleepTimerDialog = false
+                                                Toast.makeText(context, "Sleep timer turned off", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Text("Turn off", color = Color(0xFFFF5252), fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Stop playback after:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = AlaktraTextSecondary,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+
                         val timerOptions = listOf(
+                            "End of this track" to -1,
+                            "5 minutes" to 5,
+                            "10 minutes" to 10,
                             "15 minutes" to 15,
                             "30 minutes" to 30,
                             "45 minutes" to 45,
-                            "60 minutes" to 60,
-                            "Turn off timer" to 0
+                            "60 minutes" to 60
                         )
+
                         timerOptions.forEach { (label, minutes) ->
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        audioController.setSleepTimer(minutes)
+                                        if (minutes == -1) {
+                                            audioController.setSleepTimer(0, endOfTrack = true)
+                                            val msg = "Playback will stop at the end of this track"
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            audioController.setSleepTimer(minutes, endOfTrack = false)
+                                            val msg = "Sleep timer set for $minutes minutes"
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
                                         showSleepTimerDialog = false
-                                        val msg = if (minutes > 0) "Sleep timer set for $minutes minutes" else "Sleep timer turned off"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }
-                                    .padding(vertical = 12.dp, horizontal = 8.dp)
+                                    .padding(vertical = 10.dp, horizontal = 8.dp)
                             ) {
+                                Icon(
+                                    imageVector = if (minutes == -1) Icons.Default.SkipNext else Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = if ((minutes == -1 && stopAtEndOfTrack) || (minutes > 0 && !stopAtEndOfTrack && sleepTimerSeconds != null && sleepTimerSeconds!! / 60 == minutes)) AlaktraMint else AlaktraTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     text = label,
-                                    color = if (minutes == 0) Color(0xFFFF5252) else AlaktraTextPrimary,
+                                    color = if ((minutes == -1 && stopAtEndOfTrack) || (minutes > 0 && !stopAtEndOfTrack && sleepTimerSeconds != null && sleepTimerSeconds!! / 60 == minutes)) AlaktraMint else AlaktraTextPrimary,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if ((minutes == -1 && stopAtEndOfTrack) || (minutes > 0 && !stopAtEndOfTrack && sleepTimerSeconds != null && sleepTimerSeconds!! / 60 == minutes)) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+
+                        if (isSleepTimerActive) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        audioController.cancelSleepTimer()
+                                        showSleepTimerDialog = false
+                                        Toast.makeText(context, "Sleep timer turned off", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Turn off timer",
+                                    color = Color(0xFFFF5252),
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             }

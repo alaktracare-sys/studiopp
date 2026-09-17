@@ -66,11 +66,17 @@ fun LibraryScreen(
             )
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 760.dp)
+            ) {
             // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -394,6 +400,7 @@ fun LibraryScreen(
             }
         }
     }
+}
 
     // Create Playlist Dialog
     if (showCreateDialog) {

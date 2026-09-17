@@ -93,11 +93,17 @@ fun SearchScreen(
     Scaffold(
         containerColor = AlaktraBackground
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 760.dp)
+            ) {
             // Header
             Text(
                 text = "Search",
@@ -386,6 +392,7 @@ fun SearchScreen(
             }
         }
     }
+}
 
     selectedSongForMenu?.let { song ->
         val isDownloaded = song.isDownloaded || (downloadProgress[song.id] == null && song.localPath != null)

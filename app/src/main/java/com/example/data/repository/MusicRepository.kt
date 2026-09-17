@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import android.content.Context
+import com.example.BuildConfig
 import com.example.data.DownloadManager
 import com.example.data.local.AppDatabase
 import com.example.data.preferences.AuthPreferences
@@ -20,10 +21,41 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
+import com.example.data.local.ListeningHistoryEntity
+import kotlinx.coroutines.flow.Flow
+
 class MusicRepository(private val context: Context) {
     val authPreferences = AuthPreferences(context)
     val downloadManager = DownloadManager(context)
-    private val songDao = AppDatabase.getInstance(context).songDao()
+    private val appDatabase = AppDatabase.getInstance(context)
+    private val songDao = appDatabase.songDao()
+    val listeningHistory: Flow<List<ListeningHistoryEntity>> = appDatabase.getAllHistory()
+
+    suspend fun recordSongPlayed(song: Song) {
+        appDatabase.insertListeningHistory(
+            ListeningHistoryEntity(
+                songId = song.id,
+                title = song.title,
+                artist = song.artist,
+                audioUrl = song.audioUrl,
+                coverUrl = song.coverUrl,
+                duration = song.duration,
+                playedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun deleteHistoryItem(id: Long) {
+        appDatabase.deleteHistoryItem(id)
+    }
+
+    suspend fun clearListeningHistory() {
+        appDatabase.clearAllHistory()
+    }
+
+    suspend fun seedHistoryIfEmpty(songs: List<Song>) {
+        appDatabase.seedSampleHistoryIfEmpty(songs)
+    }
 
     @Volatile
     private var cachedBaseUrl: String = authPreferences.getServerBaseUrl()
@@ -47,7 +79,7 @@ class MusicRepository(private val context: Context) {
 
     private fun buildApiService(baseUrl: String): MusicApiService {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
         }
         val client = OkHttpClient.Builder()
             .addInterceptor(logging)
@@ -87,11 +119,11 @@ class MusicRepository(private val context: Context) {
     private val defaultSongs = listOf(
         Song(
             id = 101,
-            title = "The Neverending Story",
-            artist = "Kangaroo MusiQue",
-            audioUrl = "https://commondatastorage.googleapis.com/codeskulptor-demos/DDR_assets/Kangaroo_MusiQue_-_The_Neverending_Story.mp3",
+            title = "Acoustic Melody",
+            artist = "SoundHelix",
+            audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
             coverUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop",
-            duration = 214.0
+            duration = 372.0
         ),
         Song(
             id = 102,
@@ -116,6 +148,14 @@ class MusicRepository(private val context: Context) {
             audioUrl = "https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/race1.ogg",
             coverUrl = "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=500&auto=format&fit=crop",
             duration = 152.0
+        ),
+        Song(
+            id = 105,
+            title = "Harmonic Chillout",
+            artist = "SoundHelix",
+            audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+            coverUrl = "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=500&auto=format&fit=crop",
+            duration = 425.0
         )
     )
 

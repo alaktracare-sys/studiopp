@@ -1,27 +1,24 @@
 package com.example.audio
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
-import android.os.Handler
 import android.util.Log
+import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.compose.ui.graphics.Color
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.Renderer
-import androidx.media3.exoplayer.RenderersFactory
-import androidx.media3.exoplayer.audio.AudioRendererEventListener
-import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import androidx.media3.exoplayer.metadata.MetadataOutput
-import androidx.media3.exoplayer.text.TextOutput
-import androidx.media3.exoplayer.video.VideoRendererEventListener
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.request.ImageRequest
@@ -51,6 +48,8 @@ data class PlaybackState(
     val secondaryColor: Color = Color(0xFF0F172A)
 )
 
+@OptIn(UnstableApi::class)
+@SuppressLint("StaticFieldLeak")
 class AudioController private constructor(private val context: Context) {
     val player: ExoPlayer = run {
         val audioAttributes = AudioAttributes.Builder()
@@ -58,34 +57,9 @@ class AudioController private constructor(private val context: Context) {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
-        val codecSelector = MediaCodecSelector { mimeType, requiresSecure, requiresTunneling ->
-            val defaultDecoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecure, requiresTunneling)
-            defaultDecoders.sortedWith { a, b ->
-                val aIsC2 = a.name.startsWith("c2.", ignoreCase = true)
-                val bIsC2 = b.name.startsWith("c2.", ignoreCase = true)
-                when {
-                    !aIsC2 && bIsC2 -> -1
-                    aIsC2 && !bIsC2 -> 1
-                    else -> 0
-                }
-            }
-        }
-
-        val renderersFactory = RenderersFactory { handler: Handler,
-            _: VideoRendererEventListener,
-            audioListener: AudioRendererEventListener,
-            _: TextOutput,
-            _: MetadataOutput ->
-            arrayOf<Renderer>(
-                MediaCodecAudioRenderer(
-                    context,
-                    codecSelector,
-                    handler,
-                    audioListener,
-                    DefaultAudioSink.Builder(context).build()
-                )
-            )
-        }
+        val renderersFactory = DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
         ExoPlayer.Builder(context, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
@@ -123,6 +97,16 @@ class AudioController private constructor(private val context: Context) {
             override fun onPlayerError(error: PlaybackException) {
                 Log.e("AudioController", "Playback error: ${error.errorCodeName} (${error.errorCode}): ${error.message}")
                 _playbackState.value = _playbackState.value.copy(isPlaying = false)
+                scope.launch {
+                    val songTitle = _playbackState.value.currentSong?.title ?: "track"
+                    Toast.makeText(context, "Unable to stream \"$songTitle\" (source error)", Toast.LENGTH_SHORT).show()
+                    // If queue has more songs, attempt playing next track
+                    val state = _playbackState.value
+                    if (state.queue.size > 1 && state.currentIndex < state.queue.size - 1) {
+                        delay(1200)
+                        next()
+                    }
+                }
             }
         })
     }
@@ -191,13 +175,66 @@ class AudioController private constructor(private val context: Context) {
             Uri.parse(song.audioUrl)
         }
 
-        val mediaItem = MediaItem.fromUri(uri)
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle(song.title)
+            .setArtist(song.artist)
+            .setArtworkUri(Uri.parse(song.coverUrl))
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(song.id.toString())
+            .setMediaMetadata(mediaMetadata)
+            .build()
+
         player.setMediaItem(mediaItem)
         player.prepare()
         player.play()
 
+        // Ensure playback service is started
+        try {
+            val serviceIntent = Intent(context, MusicPlaybackService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.w("AudioController", "Could not start playback service: ${e.message}")
+        }
+
         // Extract palette from cover
         extractPalette(song.coverUrl)
+
+        // Record listening history
+        recordHistory(song)
+    }
+
+    private var lastRecordedSongId: Int? = null
+    private var lastRecordedTimeMs: Long = 0L
+
+    private fun recordHistory(song: Song) {
+        val now = System.currentTimeMillis()
+        if (song.id == lastRecordedSongId && (now - lastRecordedTimeMs) < 10000) {
+            return
+        }
+        lastRecordedSongId = song.id
+        lastRecordedTimeMs = now
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val db = com.example.data.local.AppDatabase.getInstance(context)
+                db.insertListeningHistory(
+                    com.example.data.local.ListeningHistoryEntity(
+                        songId = song.id,
+                        title = song.title,
+                        artist = song.artist,
+                        audioUrl = song.audioUrl,
+                        coverUrl = song.coverUrl,
+                        duration = song.duration,
+                        playedAt = now
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w("AudioController", "Failed to record history", e)
+            }
+        }
     }
 
     fun togglePlayPause() {
@@ -318,6 +355,15 @@ class AudioController private constructor(private val context: Context) {
     }
 
     private fun handleTrackEnded() {
+        if (_stopAtEndOfTrack.value) {
+            _stopAtEndOfTrack.value = false
+            _isSleepTimerActive.value = false
+            _sleepTimerRemainingSeconds.value = null
+            sleepTimerJob?.cancel()
+            pause()
+            seekTo(0)
+            return
+        }
         when (_playbackState.value.loopMode) {
             LoopMode.ONE -> {
                 seekTo(0)
@@ -382,22 +428,76 @@ class AudioController private constructor(private val context: Context) {
     private val _sleepTimerRemainingSeconds = MutableStateFlow<Int?>(null)
     val sleepTimerRemainingSeconds: StateFlow<Int?> = _sleepTimerRemainingSeconds.asStateFlow()
 
-    fun setSleepTimer(minutes: Int) {
+    private val _isSleepTimerActive = MutableStateFlow(false)
+    val isSleepTimerActive: StateFlow<Boolean> = _isSleepTimerActive.asStateFlow()
+
+    private val _stopAtEndOfTrack = MutableStateFlow(false)
+    val stopAtEndOfTrack: StateFlow<Boolean> = _stopAtEndOfTrack.asStateFlow()
+
+    fun setSleepTimer(minutes: Int, endOfTrack: Boolean = false) {
         sleepTimerJob?.cancel()
-        if (minutes <= 0) {
-            _sleepTimerRemainingSeconds.value = null
+        _stopAtEndOfTrack.value = endOfTrack
+
+        if (endOfTrack) {
+            _isSleepTimerActive.value = true
+            val remainingMs = (player.duration - player.currentPosition).coerceAtLeast(0L)
+            _sleepTimerRemainingSeconds.value = (remainingMs / 1000).toInt()
+            sleepTimerJob = scope.launch {
+                while (isActive && _stopAtEndOfTrack.value) {
+                    val rem = ((player.duration - player.currentPosition).coerceAtLeast(0L) / 1000).toInt()
+                    _sleepTimerRemainingSeconds.value = rem
+                    if (rem <= 0 && !player.isPlaying) {
+                        break
+                    }
+                    delay(500)
+                }
+            }
             return
         }
+
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
+
+        _isSleepTimerActive.value = true
         sleepTimerJob = scope.launch {
             var remaining = minutes * 60
-            while (remaining > 0) {
+            while (remaining > 0 && isActive) {
                 _sleepTimerRemainingSeconds.value = remaining
+                // Gentle audio fade-out during final 4 seconds
+                if (remaining <= 4 && player.isPlaying) {
+                    val factor = (remaining.toFloat() / 5f).coerceIn(0.1f, 1f)
+                    player.volume = factor
+                }
                 delay(1000)
                 remaining--
             }
-            _sleepTimerRemainingSeconds.value = null
-            pause()
+            if (isActive) {
+                _sleepTimerRemainingSeconds.value = null
+                _isSleepTimerActive.value = false
+                pause()
+                player.volume = 1.0f
+            }
         }
+    }
+
+    fun addMinutesToSleepTimer(extraMinutes: Int) {
+        if (_stopAtEndOfTrack.value) {
+            setSleepTimer(extraMinutes, false)
+            return
+        }
+        val currentRemaining = _sleepTimerRemainingSeconds.value ?: 0
+        val newTotalMinutes = ((currentRemaining + (extraMinutes * 60)) / 60).coerceAtLeast(1)
+        setSleepTimer(newTotalMinutes, false)
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        _stopAtEndOfTrack.value = false
+        _isSleepTimerActive.value = false
+        _sleepTimerRemainingSeconds.value = null
+        player.volume = 1.0f
     }
 
     companion object {

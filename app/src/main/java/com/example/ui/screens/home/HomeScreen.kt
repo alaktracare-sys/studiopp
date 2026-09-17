@@ -73,12 +73,18 @@ fun HomeScreen(
     Scaffold(
         containerColor = AlaktraBackground
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 140.dp)
+            contentAlignment = Alignment.TopCenter
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 760.dp),
+                contentPadding = PaddingValues(bottom = 140.dp)
+            ) {
             // Alaktra Brand Header & Greeting
             item {
                 Column(
@@ -205,7 +211,7 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Connect to Tailscale or upload your first MP3 in the Profile tab.",
+                                text = "Connect to your Tailscale server to stream your music library.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = AlaktraTextSecondary,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -338,6 +344,7 @@ fun HomeScreen(
             }
         }
     }
+}
 
     // Bottom sheet for more menu
     selectedSongForMenu?.let { song ->

@@ -82,8 +82,13 @@ class AuthPreferences(context: Context) {
     }
 
     fun setServerBaseUrl(url: String) {
-        val normalized = url.trim().let { if (it.endsWith("/")) it else "$it/" }
-        prefs.edit().putString(KEY_SERVER_URL, normalized).apply()
+        val trimmed = url.trim()
+        val safeUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            if (trimmed.endsWith("/")) trimmed else "$trimmed/"
+        } else {
+            DEFAULT_SERVER_URL
+        }
+        prefs.edit().putString(KEY_SERVER_URL, safeUrl).apply()
     }
 
     fun getLikedPlaylistId(): Int {

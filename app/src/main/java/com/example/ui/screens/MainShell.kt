@@ -97,15 +97,20 @@ fun MainShell(
         Scaffold(
             containerColor = AlaktraBackground,
             bottomBar = {
-                if (currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
-                    NavigationBar(
-                        containerColor = AlaktraSurface.copy(alpha = 0.45f),
-                        contentColor = AlaktraTextPrimary,
-                        tonalElevation = 0.dp,
-                        modifier = Modifier
-                            .border(width = 0.5.dp, color = AlaktraBorder.copy(alpha = 0.30f), shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                if (!showFullPlayer && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.BottomCenter
                     ) {
+                        NavigationBar(
+                            containerColor = AlaktraSurface.copy(alpha = 0.45f),
+                            contentColor = AlaktraTextPrimary,
+                            tonalElevation = 0.dp,
+                            modifier = Modifier
+                                .widthIn(max = 720.dp)
+                                .border(width = 0.5.dp, color = AlaktraBorder.copy(alpha = 0.30f), shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        ) {
                             NavigationBarItem(
                                 selected = currentTab == 0 && currentScreen == Screen.HOME,
                                 onClick = {
@@ -187,6 +192,7 @@ fun MainShell(
                                 )
                             )
                         }
+                    }
                 }
             }
         ) { padding ->
@@ -264,7 +270,7 @@ fun MainShell(
                 }
 
                 // Floating MiniPlayer over the scrolling content (no black square background)
-                if (playbackState.currentSong != null && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST)) {
+                if (!showFullPlayer && playbackState.currentSong != null && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST)) {
                     val miniPlayerBottomPad = if (currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
                         padding.calculateBottomPadding() + 6.dp
                     } else {
@@ -286,6 +292,7 @@ fun MainShell(
                         onExpand = { showFullPlayer = true },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
+                            .widthIn(max = 640.dp)
                             .padding(bottom = miniPlayerBottomPad)
                     )
                 }
@@ -295,6 +302,7 @@ fun MainShell(
         // Full Screen Player Modal / Overlay
         AnimatedVisibility(
             visible = showFullPlayer,
+            modifier = Modifier.fillMaxSize(),
             enter = slideInVertically(initialOffsetY = { it }),
             exit = slideOutVertically(targetOffsetY = { it })
         ) {
