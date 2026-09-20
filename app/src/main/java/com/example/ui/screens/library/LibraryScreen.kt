@@ -75,7 +75,7 @@ fun LibraryScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 760.dp)
+                    .widthIn(max = 840.dp)
             ) {
             // Header
             Row(

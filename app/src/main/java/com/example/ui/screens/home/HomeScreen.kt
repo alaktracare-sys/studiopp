@@ -1,5 +1,6 @@
 package com.example.ui.screens.home
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +33,8 @@ import com.example.ui.components.AlaktraShimmerBox
 import com.example.ui.components.SongCover
 import com.example.ui.components.SongItemRow
 import com.example.ui.components.SongMenuBottomSheet
+import com.example.ui.responsive.WindowWidthSize
+import com.example.ui.responsive.rememberWindowSizeInfo
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -44,6 +48,7 @@ fun HomeScreen(
     onNavigateToPlaylist: (Int, String) -> Unit = { _, _ -> },
     onNavigateToLikedSongs: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -70,6 +75,15 @@ fun HomeScreen(
         isLoading = false
     }
 
+    val windowSize = rememberWindowSizeInfo()
+    val horizontalPad = windowSize.horizontalPadding
+    val cardWidth = when (windowSize.widthSize) {
+        WindowWidthSize.COMPACT -> 140.dp
+        WindowWidthSize.MEDIUM -> 160.dp
+        WindowWidthSize.EXPANDED -> 180.dp
+    }
+    val mfyCardWidth = (cardWidth * 1.15f).coerceIn(160.dp, 220.dp)
+
     Scaffold(
         containerColor = AlaktraBackground
     ) { padding ->
@@ -82,7 +96,7 @@ fun HomeScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 760.dp),
+                    .widthIn(max = 1000.dp),
                 contentPadding = PaddingValues(bottom = 140.dp)
             ) {
             // Alaktra Brand Header & Greeting
@@ -90,7 +104,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .padding(horizontal = horizontalPad, vertical = 16.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -166,7 +180,7 @@ fun HomeScreen(
             // Loading Skeleton
             if (isLoading) {
                 item {
-                    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = horizontalPad)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
                             AlaktraShimmerBox(modifier = Modifier.weight(1f).height(56.dp))
@@ -220,34 +234,42 @@ fun HomeScreen(
                     }
                 }
             } else {
-                // Quick Access 2-Column Grid
+                // Quick Access Adaptive Grid
                 item {
-                    Column(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                            .padding(horizontal = horizontalPad, vertical = 6.dp)
                     ) {
-                        val quickItems = songs.take(6)
-                        val pairs = quickItems.chunked(2)
+                        val columns = when {
+                            maxWidth < 480.dp -> 2
+                            maxWidth < 750.dp -> 3
+                            maxWidth < 1000.dp -> 4
+                            else -> 5
+                        }
+                        val quickItems = songs.take(columns * 2)
+                        val rows = quickItems.chunked(columns)
 
-                        pairs.forEach { pair ->
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                pair.forEach { songItem ->
-                                    val isCurrent = playbackState.currentSong?.id == songItem.id
-                                    QuickAccessTile(
-                                        song = songItem,
-                                        isPlaying = isCurrent && playbackState.isPlaying,
-                                        onClick = { audioController.playSong(songItem) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                if (pair.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            rows.forEach { rowItems ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    rowItems.forEach { songItem ->
+                                        val isCurrent = playbackState.currentSong?.id == songItem.id
+                                        QuickAccessTile(
+                                            song = songItem,
+                                            isPlaying = isCurrent && playbackState.isPlaying,
+                                            onClick = { audioController.playSong(songItem) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    for (i in rowItems.size until columns) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }
@@ -258,17 +280,18 @@ fun HomeScreen(
 
                 // Jump Back In (Horizontal artwork cards)
                 item {
-                    SectionHeader(title = "Jump Back In", subtitle = "Your top rotation")
+                    SectionHeader(title = "Jump Back In", subtitle = "Your top rotation", horizontalPad = horizontalPad)
 
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        contentPadding = PaddingValues(horizontal = horizontalPad),
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         items(songs.take(8)) { song ->
                             FeaturedSongCard(
                                 song = song,
                                 isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
-                                onClick = { audioController.playSong(song) }
+                                onClick = { audioController.playSong(song) },
+                                cardWidth = cardWidth
                             )
                         }
                     }
@@ -279,17 +302,18 @@ fun HomeScreen(
                 // Made For You (Gradient Card Highlights)
                 if (songs.size > 2) {
                     item {
-                        SectionHeader(title = "Made For You", subtitle = "Fresh discovery based on your taste")
+                        SectionHeader(title = "Made For You", subtitle = "Fresh discovery based on your taste", horizontalPad = horizontalPad)
 
                         LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            contentPadding = PaddingValues(horizontal = horizontalPad),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             items(songs.reversed().take(6)) { song ->
                                 MadeForYouCard(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
-                                    onClick = { audioController.playSong(song) }
+                                    onClick = { audioController.playSong(song) },
+                                    cardWidth = mfyCardWidth
                                 )
                             }
                         }
@@ -301,16 +325,17 @@ fun HomeScreen(
                 // Playlists carousel if available
                 if (playlists.isNotEmpty()) {
                     item {
-                        SectionHeader(title = "Your Playlists", subtitle = "Curated collections")
+                        SectionHeader(title = "Your Playlists", subtitle = "Curated collections", horizontalPad = horizontalPad)
 
                         LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            contentPadding = PaddingValues(horizontal = horizontalPad),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             items(playlists) { pl ->
                                 PlaylistCard(
                                     playlist = pl,
-                                    onClick = { onNavigateToPlaylist(pl.id, pl.name) }
+                                    onClick = { onNavigateToPlaylist(pl.id, pl.name) },
+                                    cardWidth = cardWidth
                                 )
                             }
                         }
@@ -321,7 +346,7 @@ fun HomeScreen(
 
                 // Trending & All Tracks List
                 item {
-                    SectionHeader(title = "Recommended Tracks", subtitle = "High fidelity streaming")
+                    SectionHeader(title = "Recommended Tracks", subtitle = "High fidelity streaming", horizontalPad = horizontalPad)
                 }
 
                 itemsIndexed(songs) { index, song ->
@@ -353,7 +378,14 @@ fun HomeScreen(
             song = song,
             isDownloaded = isDownloaded,
             onDismiss = { selectedSongForMenu = null },
-            onAddToQueue = { audioController.addToUpNext(song) },
+            onPlayNext = {
+                audioController.playNext(song)
+                Toast.makeText(context, "Playing next: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                audioController.addToQueue(song)
+                Toast.makeText(context, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
             onAddToPlaylist = { onNavigateToPlaylistSelect(song) },
             onToggleDownload = {
                 scope.launch {
@@ -374,9 +406,10 @@ fun HomeScreen(
 @Composable
 private fun SectionHeader(
     title: String,
-    subtitle: String? = null
+    subtitle: String? = null,
+    horizontalPad: androidx.compose.ui.unit.Dp = 20.dp
 ) {
-    Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+    Column(modifier = Modifier.padding(start = horizontalPad, end = horizontalPad, bottom = 12.dp)) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge.copy(
@@ -437,11 +470,12 @@ private fun QuickAccessTile(
 private fun FeaturedSongCard(
     song: Song,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cardWidth: androidx.compose.ui.unit.Dp = 140.dp
 ) {
     Column(
         modifier = Modifier
-            .width(140.dp)
+            .width(cardWidth)
             .clip(RoundedCornerShape(14.dp))
             .background(AlaktraSurface)
             .border(1.dp, if (isPlaying) AlaktraMint.copy(alpha = 0.5f) else AlaktraBorder, RoundedCornerShape(14.dp))
@@ -450,8 +484,11 @@ private fun FeaturedSongCard(
     ) {
         SongCover(
             imageUrl = song.coverUrl,
-            size = 120.dp,
-            cornerRadius = 10.dp
+            size = androidx.compose.ui.unit.Dp.Unspecified,
+            cornerRadius = 10.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -475,12 +512,13 @@ private fun FeaturedSongCard(
 private fun MadeForYouCard(
     song: Song,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cardWidth: androidx.compose.ui.unit.Dp = 160.dp
 ) {
     Box(
         modifier = Modifier
-            .width(160.dp)
-            .height(180.dp)
+            .width(cardWidth)
+            .heightIn(min = 180.dp, max = 220.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.verticalGradient(
@@ -532,11 +570,12 @@ private fun MadeForYouCard(
 @Composable
 private fun PlaylistCard(
     playlist: Playlist,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cardWidth: androidx.compose.ui.unit.Dp = 130.dp
 ) {
     Column(
         modifier = Modifier
-            .width(130.dp)
+            .width(cardWidth)
             .clip(RoundedCornerShape(14.dp))
             .background(AlaktraSurface)
             .border(1.dp, AlaktraBorder, RoundedCornerShape(14.dp))
@@ -545,7 +584,8 @@ private fun PlaylistCard(
     ) {
         Box(
             modifier = Modifier
-                .size(110.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f)
                 .clip(RoundedCornerShape(10.dp))
                 .background(
                     Brush.linearGradient(

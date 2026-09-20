@@ -82,14 +82,21 @@ fun ProfileScreen(
         },
         containerColor = AlaktraBackground
     ) { padding ->
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Avatar
@@ -348,6 +355,7 @@ fun ProfileScreen(
             }
 
             Spacer(modifier = Modifier.height(30.dp))
+            }
         }
     }
 

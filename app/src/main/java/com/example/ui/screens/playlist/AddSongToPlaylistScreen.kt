@@ -71,11 +71,18 @@ fun AddSongToPlaylistScreen(
         },
         containerColor = AlaktraBackground
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .widthIn(max = 840.dp)
+            ) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -151,6 +158,7 @@ fun AddSongToPlaylistScreen(
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,9 +30,11 @@ fun SongCover(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(cornerRadius)
+    val baseModifier = if (size != Dp.Unspecified) modifier.size(size) else modifier.aspectRatio(1f)
+    val iconFallbackSize = if (size != Dp.Unspecified) size / 2.2f else 28.dp
+
     Box(
-        modifier = modifier
-            .size(size)
+        modifier = baseModifier
             .clip(shape)
             .background(
                 Brush.linearGradient(
@@ -57,7 +60,7 @@ fun SongCover(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = AlaktraMint.copy(alpha = 0.5f),
-                            modifier = Modifier.size(size / 2.2f)
+                            modifier = Modifier.size(iconFallbackSize)
                         )
                     }
                 },
@@ -72,7 +75,7 @@ fun SongCover(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = Color.Gray,
-                            modifier = Modifier.size(size / 2.2f)
+                            modifier = Modifier.size(iconFallbackSize)
                         )
                     }
                 }
@@ -82,7 +85,7 @@ fun SongCover(
                 imageVector = Icons.Default.MusicNote,
                 contentDescription = null,
                 tint = Color.Gray,
-                modifier = Modifier.size(size / 2.2f)
+                modifier = Modifier.size(iconFallbackSize)
             )
         }
     }

@@ -309,7 +309,7 @@ fun FullListeningHistorySheet(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 760.dp)
+                    .widthIn(max = 840.dp)
             ) {
             // Month Stats Hero Card
             Card(

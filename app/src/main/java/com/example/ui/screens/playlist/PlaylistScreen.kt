@@ -1,5 +1,6 @@
 package com.example.ui.screens.playlist
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +41,7 @@ fun PlaylistScreen(
     onBack: () -> Unit,
     onNavigateToAddSongs: () -> Unit
 ) {
+    val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var selectedSongForMenu by remember { mutableStateOf<Song?>(null) }
@@ -59,12 +62,19 @@ fun PlaylistScreen(
     Scaffold(
         containerColor = AlaktraBackground
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 140.dp)
+            contentAlignment = Alignment.TopCenter
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .widthIn(max = 840.dp),
+                contentPadding = PaddingValues(bottom = 140.dp)
+            ) {
             // Gradient Header with Playlist Title
             item {
                 Box(
@@ -188,7 +198,7 @@ fun PlaylistScreen(
                             onClick = {
                                 if (songs.isNotEmpty()) {
                                     val shuffled = songs.shuffled()
-                                    audioController.playQueue(shuffled, 0)
+                                    audioController.playQueue(shuffled, 0, source = "Shuffle: $playlistName")
                                 }
                             },
                             modifier = Modifier
@@ -215,7 +225,7 @@ fun PlaylistScreen(
                             .background(Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan)))
                             .clickable {
                                 if (songs.isNotEmpty()) {
-                                    audioController.playQueue(songs, 0)
+                                    audioController.playQueue(songs, 0, source = "Playlist: $playlistName")
                                 }
                             }
                     ) {
@@ -315,7 +325,7 @@ fun PlaylistScreen(
                         song = song,
                         isPlaying = isCurrent && playbackState.isPlaying,
                         downloadProgress = downloadProgress[song.id],
-                        onSongClick = { audioController.playQueue(songs, index) },
+                        onSongClick = { audioController.playQueue(songs, index, source = "Playlist: $playlistName") },
                         onLikeToggle = {
                             scope.launch {
                                 val isLiked = repository.toggleLike(song)
@@ -329,6 +339,7 @@ fun PlaylistScreen(
             }
         }
     }
+    }
 
     selectedSongForMenu?.let { song ->
         val isDownloaded = song.isDownloaded || (downloadProgress[song.id] == null && song.localPath != null)
@@ -336,7 +347,14 @@ fun PlaylistScreen(
             song = song,
             isDownloaded = isDownloaded,
             onDismiss = { selectedSongForMenu = null },
-            onAddToQueue = { audioController.addToUpNext(song) },
+            onPlayNext = {
+                audioController.playNext(song)
+                Toast.makeText(context, "Playing next: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                audioController.addToQueue(song)
+                Toast.makeText(context, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
             onAddToPlaylist = {},
             onToggleDownload = {
                 scope.launch {

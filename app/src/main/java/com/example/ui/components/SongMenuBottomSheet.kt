@@ -27,7 +27,8 @@ fun SongMenuBottomSheet(
     onDismiss: () -> Unit,
     onAddToQueue: () -> Unit,
     onAddToPlaylist: () -> Unit,
-    onToggleDownload: () -> Unit
+    onToggleDownload: () -> Unit,
+    onPlayNext: () -> Unit = {}
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -45,18 +46,23 @@ fun SongMenuBottomSheet(
             )
         }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 22.dp, vertical = 8.dp)
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
         ) {
-            // Header with song info
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
                 modifier = Modifier
+                    .widthIn(max = 560.dp)
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(horizontal = 22.dp, vertical = 8.dp)
             ) {
+                // Header with song info
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
                 SongCover(imageUrl = song.coverUrl, size = 56.dp, cornerRadius = 12.dp)
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -77,6 +83,17 @@ fun SongMenuBottomSheet(
             }
 
             HorizontalDivider(color = AlaktraBorder, modifier = Modifier.padding(bottom = 10.dp))
+
+            // Action: Play Next (Spotify / Apple Music priority)
+            MenuActionRow(
+                icon = Icons.Default.PlaylistPlay,
+                title = "Play Next",
+                tint = AlaktraMint,
+                onClick = {
+                    onPlayNext()
+                    onDismiss()
+                }
+            )
 
             // Action: Add to Queue
             MenuActionRow(
@@ -114,6 +131,7 @@ fun SongMenuBottomSheet(
             Spacer(modifier = Modifier.height(28.dp))
         }
     }
+}
 }
 
 @Composable

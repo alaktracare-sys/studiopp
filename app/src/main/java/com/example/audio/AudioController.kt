@@ -41,12 +41,16 @@ data class PlaybackState(
     val durationMs: Long = 0L,
     val queue: List<Song> = emptyList(),
     val currentIndex: Int = -1,
-    val upNext: List<Song> = emptyList(),
+    val originalQueue: List<Song> = emptyList(),
+    val userQueue: List<Song> = emptyList(),
+    val playbackSource: String = "Alaktra Stream",
     val isShuffle: Boolean = false,
     val loopMode: LoopMode = LoopMode.OFF,
     val dominantColor: Color = Color(0xFF1E1B4B),
     val secondaryColor: Color = Color(0xFF0F172A)
-)
+) {
+    val upNext: List<Song> get() = userQueue
+}
 
 @OptIn(UnstableApi::class)
 @SuppressLint("StaticFieldLeak")
@@ -133,27 +137,100 @@ class AudioController private constructor(private val context: Context) {
         progressJob = null
     }
 
-    fun playQueue(songs: List<Song>, startIndex: Int = 0) {
+    fun playQueue(songs: List<Song>, startIndex: Int = 0, source: String = "Alaktra Stream") {
         if (songs.isEmpty()) return
         val validIndex = startIndex.coerceIn(0, songs.size - 1)
-        _playbackState.value = _playbackState.value.copy(
-            queue = songs,
-            currentIndex = validIndex
-        )
-        playSongAtIndex(validIndex)
+        val isShuffle = _playbackState.value.isShuffle
+        if (isShuffle) {
+            val startSong = songs[validIndex]
+            val otherSongs = songs.filterIndexed { i, _ -> i != validIndex }.shuffled()
+            val shuffledQueue = listOf(startSong) + otherSongs
+            _playbackState.value = _playbackState.value.copy(
+                originalQueue = songs,
+                queue = shuffledQueue,
+                currentIndex = 0,
+                userQueue = emptyList(),
+                playbackSource = source
+            )
+            playSongAtIndex(0)
+        } else {
+            _playbackState.value = _playbackState.value.copy(
+                originalQueue = songs,
+                queue = songs,
+                currentIndex = validIndex,
+                userQueue = emptyList(),
+                playbackSource = source
+            )
+            playSongAtIndex(validIndex)
+        }
     }
 
-    fun playSong(song: Song) {
+    fun playSong(song: Song, source: String = "Now Playing") {
         val currentQueue = _playbackState.value.queue.toMutableList()
         val existingIndex = currentQueue.indexOfFirst { it.id == song.id }
         if (existingIndex != -1) {
-            _playbackState.value = _playbackState.value.copy(currentIndex = existingIndex)
+            _playbackState.value = _playbackState.value.copy(
+                currentIndex = existingIndex,
+                playbackSource = source
+            )
             playSongAtIndex(existingIndex)
         } else {
             currentQueue.add(0, song)
-            _playbackState.value = _playbackState.value.copy(queue = currentQueue, currentIndex = 0)
+            val updatedOriginal = listOf(song) + _playbackState.value.originalQueue.filter { it.id != song.id }
+            _playbackState.value = _playbackState.value.copy(
+                queue = currentQueue,
+                originalQueue = updatedOriginal,
+                currentIndex = 0,
+                playbackSource = source
+            )
             playSongAtIndex(0)
         }
+    }
+
+    private fun playSongDirectly(song: Song) {
+        val state = _playbackState.value
+        _playbackState.value = state.copy(
+            currentSong = song,
+            currentPositionMs = 0L,
+            durationMs = (song.duration * 1000).toLong()
+        )
+
+        // Resolve local file if available
+        val uri = if (song.localPath != null && File(song.localPath).exists()) {
+            Uri.fromFile(File(song.localPath))
+        } else {
+            Uri.parse(song.audioUrl)
+        }
+
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle(song.title)
+            .setArtist(song.artist)
+            .setArtworkUri(Uri.parse(song.coverUrl))
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(song.id.toString())
+            .setMediaMetadata(mediaMetadata)
+            .build()
+
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        player.play()
+
+        // Ensure playback service is started
+        try {
+            val serviceIntent = Intent(context, MusicPlaybackService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.w("AudioController", "Could not start playback service: ${e.message}")
+        }
+
+        // Extract palette from cover
+        extractPalette(song.coverUrl)
+
+        // Record listening history
+        recordHistory(song)
     }
 
     private fun playSongAtIndex(index: Int) {
@@ -264,35 +341,31 @@ class AudioController private constructor(private val context: Context) {
 
     fun next() {
         val state = _playbackState.value
-        // Check Up Next first
-        if (state.upNext.isNotEmpty()) {
-            val nextSong = state.upNext.first()
-            val remainingUpNext = state.upNext.drop(1)
-            val newQueue = state.queue.toMutableList()
-            newQueue.add(state.currentIndex + 1, nextSong)
-            _playbackState.value = state.copy(
-                queue = newQueue,
-                upNext = remainingUpNext,
-                currentIndex = state.currentIndex + 1
-            )
-            playSongAtIndex(state.currentIndex + 1)
+        // 1. Layer 1: Check user-added queue ("Next in Queue") first (Spotify priority)
+        if (state.userQueue.isNotEmpty()) {
+            val nextSong = state.userQueue.first()
+            val remainingUserQueue = state.userQueue.drop(1)
+            _playbackState.value = state.copy(userQueue = remainingUserQueue)
+            playSongDirectly(nextSong)
             return
         }
 
+        // 2. Layer 2: Ambient / Context queue from current playlist/album/stream
         if (state.queue.isEmpty()) return
-
-        if (state.isShuffle) {
-            val randomIdx = state.queue.indices.filter { it != state.currentIndex }.randomOrNull()
-                ?: state.currentIndex
-            playSongAtIndex(randomIdx)
-            return
-        }
 
         val nextIndex = state.currentIndex + 1
         if (nextIndex < state.queue.size) {
             playSongAtIndex(nextIndex)
         } else if (state.loopMode == LoopMode.ALL) {
-            playSongAtIndex(0)
+            if (state.isShuffle) {
+                // Reshuffle for next round when loop is active
+                val original = if (state.originalQueue.isNotEmpty()) state.originalQueue else state.queue
+                val reshuffled = original.shuffled()
+                _playbackState.value = state.copy(queue = reshuffled, currentIndex = 0)
+                playSongAtIndex(0)
+            } else {
+                playSongAtIndex(0)
+            }
         }
     }
 
@@ -311,7 +384,40 @@ class AudioController private constructor(private val context: Context) {
     }
 
     fun toggleShuffle() {
-        _playbackState.value = _playbackState.value.copy(isShuffle = !_playbackState.value.isShuffle)
+        val state = _playbackState.value
+        val newShuffle = !state.isShuffle
+        if (newShuffle) {
+            // Turning shuffle ON: Spotify keeps current song playing and randomizes the upcoming queue
+            val currentSong = state.currentSong
+            if (currentSong != null && state.queue.isNotEmpty()) {
+                val original = if (state.originalQueue.isNotEmpty()) state.originalQueue else state.queue
+                val otherSongs = original.filter { it.id != currentSong.id }.shuffled()
+                val newQueue = listOf(currentSong) + otherSongs
+                _playbackState.value = state.copy(
+                    isShuffle = true,
+                    originalQueue = original,
+                    queue = newQueue,
+                    currentIndex = 0
+                )
+            } else {
+                _playbackState.value = state.copy(isShuffle = true)
+            }
+        } else {
+            // Turning shuffle OFF: Spotify restores original context sequence
+            val currentSong = state.currentSong
+            if (state.originalQueue.isNotEmpty() && currentSong != null) {
+                val original = state.originalQueue
+                val originalIndex = original.indexOfFirst { it.id == currentSong.id }
+                val restoreIndex = if (originalIndex != -1) originalIndex else 0
+                _playbackState.value = state.copy(
+                    isShuffle = false,
+                    queue = original,
+                    currentIndex = restoreIndex
+                )
+            } else {
+                _playbackState.value = state.copy(isShuffle = false)
+            }
+        }
     }
 
     fun toggleLoop() {
@@ -323,15 +429,70 @@ class AudioController private constructor(private val context: Context) {
         _playbackState.value = _playbackState.value.copy(loopMode = nextMode)
     }
 
-    fun addToUpNext(song: Song) {
-        val updated = _playbackState.value.upNext + song
-        _playbackState.value = _playbackState.value.copy(upNext = updated)
+    /** Add song to the end of user queue ("Next in Queue") */
+    fun addToQueue(song: Song) {
+        val updated = _playbackState.value.userQueue + song
+        _playbackState.value = _playbackState.value.copy(userQueue = updated)
     }
 
+    /** Add song immediately next in line ("Play Next") */
+    fun playNext(song: Song) {
+        val updated = listOf(song) + _playbackState.value.userQueue
+        _playbackState.value = _playbackState.value.copy(userQueue = updated)
+    }
+
+    /** Alias for backward compatibility */
+    fun addToUpNext(song: Song) {
+        addToQueue(song)
+    }
+
+    /** Remove a song from the user-enqueued layer */
+    fun removeFromUserQueue(index: Int) {
+        val current = _playbackState.value.userQueue.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            _playbackState.value = _playbackState.value.copy(userQueue = current)
+        }
+    }
+
+    /** Clear all songs from the user-enqueued layer */
+    fun clearUserQueue() {
+        _playbackState.value = _playbackState.value.copy(userQueue = emptyList())
+    }
+
+    /** Reorder songs inside the user-enqueued layer */
+    fun reorderUserQueue(from: Int, to: Int) {
+        val current = _playbackState.value.userQueue.toMutableList()
+        if (from in current.indices && to in current.indices) {
+            val moved = current.removeAt(from)
+            current.add(to, moved)
+            _playbackState.value = _playbackState.value.copy(userQueue = current)
+        }
+    }
+
+    /** Immediately play a song from the user-enqueued layer and remove it */
+    fun playUserQueueItem(index: Int) {
+        val current = _playbackState.value.userQueue.toMutableList()
+        if (index in current.indices) {
+            val songToPlay = current.removeAt(index)
+            _playbackState.value = _playbackState.value.copy(userQueue = current)
+            playSongDirectly(songToPlay)
+        }
+    }
+
+    /** Play a song directly from the context queue */
+    fun playContextQueueItem(index: Int) {
+        if (index in _playbackState.value.queue.indices) {
+            playSongAtIndex(index)
+        }
+    }
+
+    /** Remove a song from the base/context queue */
     fun removeFromQueue(index: Int) {
         val currentQueue = _playbackState.value.queue.toMutableList()
         if (index in currentQueue.indices) {
-            currentQueue.removeAt(index)
+            val removedSong = currentQueue.removeAt(index)
+            val updatedOriginal = _playbackState.value.originalQueue.filter { it.id != removedSong.id }
             var newIdx = _playbackState.value.currentIndex
             if (index < newIdx) {
                 newIdx--
@@ -339,7 +500,11 @@ class AudioController private constructor(private val context: Context) {
                 newIdx = newIdx.coerceAtMost(currentQueue.size - 1)
                 playSongAtIndex(newIdx)
             }
-            _playbackState.value = _playbackState.value.copy(queue = currentQueue, currentIndex = newIdx)
+            _playbackState.value = _playbackState.value.copy(
+                queue = currentQueue,
+                originalQueue = updatedOriginal,
+                currentIndex = newIdx
+            )
         }
     }
 
@@ -349,8 +514,13 @@ class AudioController private constructor(private val context: Context) {
             val moved = currentQueue.removeAt(from)
             currentQueue.add(to, moved)
             val currSong = _playbackState.value.currentSong
-            val newIndex = currentQueue.indexOfFirst { it.id == currSong?.id }
-            _playbackState.value = _playbackState.value.copy(queue = currentQueue, currentIndex = newIndex)
+            val newIndex = if (currSong != null) currentQueue.indexOfFirst { it.id == currSong.id } else _playbackState.value.currentIndex
+            val updatedOriginal = if (!_playbackState.value.isShuffle) currentQueue else _playbackState.value.originalQueue
+            _playbackState.value = _playbackState.value.copy(
+                queue = currentQueue,
+                originalQueue = updatedOriginal,
+                currentIndex = if (newIndex != -1) newIndex else _playbackState.value.currentIndex
+            )
         }
     }
 
@@ -377,12 +547,12 @@ class AudioController private constructor(private val context: Context) {
         val state = _playbackState.value
         val updatedQueue = state.queue.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
         val updatedSong = if (state.currentSong?.id == songId) state.currentSong.copy(isLiked = isLiked) else state.currentSong
-        val updatedUpNext = state.upNext.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
+        val updatedUserQueue = state.userQueue.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
 
         _playbackState.value = state.copy(
             queue = updatedQueue,
             currentSong = updatedSong,
-            upNext = updatedUpNext
+            userQueue = updatedUserQueue
         )
     }
 

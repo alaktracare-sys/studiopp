@@ -96,8 +96,8 @@ fun MiniPlayer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp)
-            .height(72.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .height(64.dp)
             .clip(pillShape)
             .background(Color.Black.copy(alpha = 0.82f))
             .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.16f), shape = pillShape)
@@ -167,13 +167,13 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxSize()
         ) {
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            // COVER (increased size for better visibility)
+            // COVER (proportionally adjusted)
             SongCover(
                 imageUrl = song.coverUrl,
-                size = 46.dp,
-                cornerRadius = 14.dp
+                size = 42.dp,
+                cornerRadius = 12.dp
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -190,7 +190,7 @@ fun MiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                     color = Color.White,
                     fontWeight = FontWeight.W600,
-                    fontSize = 15.sp
+                    fontSize = 14.sp
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -205,26 +205,26 @@ fun MiniPlayer(
             // LIKE BUTTON
             IconButton(
                 onClick = onLikeToggle,
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier.size(38.dp)
             ) {
                 Icon(
                     imageVector = if (song.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     contentDescription = if (song.isLiked) "Unlike" else "Like",
                     tint = if (song.isLiked) Color(0xFFC62828) else Color.White,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
             // PLAY / PAUSE BUTTON
             IconButton(
                 onClick = onTogglePlay,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(44.dp)
             ) {
                 Icon(
                     imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
                     tint = Color.White,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             }
 

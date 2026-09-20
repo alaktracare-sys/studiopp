@@ -1,5 +1,6 @@
 package com.example.ui.screens.search
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +56,7 @@ fun SearchScreen(
     audioController: AudioController,
     onNavigateToPlaylistSelect: (Song) -> Unit
 ) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var allSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var results by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -102,7 +105,7 @@ fun SearchScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 760.dp)
+                    .widthIn(max = 840.dp)
             ) {
             // Header
             Text(
@@ -310,25 +313,40 @@ fun SearchScreen(
                     }
 
                     item {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
                         ) {
-                            val pairs = browseGenres.chunked(2)
-                            pairs.forEach { pair ->
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    pair.forEach { genre ->
-                                        GenreCard(
-                                            genre = genre,
-                                            onClick = {
-                                                query = genre.title
-                                                triggerSearch(genre.title)
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
+                            val columns = when {
+                                maxWidth >= 700.dp -> 4
+                                maxWidth >= 460.dp -> 3
+                                else -> 2
+                            }
+                            val rows = browseGenres.chunked(columns)
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                rows.forEach { rowGenres ->
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        rowGenres.forEach { genre ->
+                                            GenreCard(
+                                                genre = genre,
+                                                onClick = {
+                                                    query = genre.title
+                                                    triggerSearch(genre.title)
+                                                },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        val remainder = columns - rowGenres.size
+                                        repeat(remainder) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
                                     }
                                 }
                             }
@@ -377,7 +395,10 @@ fun SearchScreen(
                             song = song,
                             isPlaying = isCurrent && playbackState.isPlaying,
                             downloadProgress = downloadProgress[song.id],
-                            onSongClick = { audioController.playQueue(filteredResults, index) },
+                            onSongClick = {
+                                val src = if (query.isNotBlank()) "Search: \"$query\"" else "Browse"
+                                audioController.playQueue(filteredResults, index, source = src)
+                            },
                             onLikeToggle = {
                                 scope.launch {
                                     val isLiked = repository.toggleLike(song)
@@ -400,7 +421,14 @@ fun SearchScreen(
             song = song,
             isDownloaded = isDownloaded,
             onDismiss = { selectedSongForMenu = null },
-            onAddToQueue = { audioController.addToUpNext(song) },
+            onPlayNext = {
+                audioController.playNext(song)
+                Toast.makeText(context, "Playing next: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                audioController.addToQueue(song)
+                Toast.makeText(context, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
+            },
             onAddToPlaylist = { onNavigateToPlaylistSelect(song) },
             onToggleDownload = {
                 scope.launch {
