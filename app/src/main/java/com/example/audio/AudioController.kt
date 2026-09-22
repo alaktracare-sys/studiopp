@@ -34,21 +34,56 @@ enum class LoopMode {
     OFF, ALL, ONE
 }
 
+enum class RepeatMode {
+    OFF, CONTEXT, TRACK
+}
+
+enum class ContextType {
+    PLAYLIST, ALBUM, ARTIST, SEARCH
+}
+
+data class PlaybackContext(
+    val uri: String,
+    val type: ContextType,
+    val name: String,
+    val trackIds: List<Int>,
+    val tracks: List<Song> = emptyList()
+)
+
+enum class AdvanceReason {
+    ENDED, SKIP
+}
+
 data class PlaybackState(
+    val context: PlaybackContext? = null,
+    val contextOrder: List<Song> = emptyList(),    // ACTIVE ordering of context.trackIds
+    val contextIndex: Int = -1,                  // pointer into contextOrder
+    val userQueue: List<Song> = emptyList(),       // explicitly queued songs, FIFO, destructive
+    val history: List<Song> = emptyList(),         // context plays only
     val currentSong: Song? = null,
-    val isPlaying: Boolean = false,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val queue: List<Song> = emptyList(),
-    val currentIndex: Int = -1,
-    val originalQueue: List<Song> = emptyList(),
-    val userQueue: List<Song> = emptyList(),
-    val playbackSource: String = "Alaktra Stream",
-    val isShuffle: Boolean = false,
-    val loopMode: LoopMode = LoopMode.OFF,
+    val isPlaying: Boolean = false,
+    val shuffle: Boolean = false,
+    val repeat: RepeatMode = RepeatMode.OFF,
+    val autoplayTracks: List<Song> = emptyList(),
     val dominantColor: Color = Color(0xFF1E1B4B),
     val secondaryColor: Color = Color(0xFF0F172A)
 ) {
+    val elapsedSec: Long get() = currentPositionMs / 1000
+    val currentTrackId: String? get() = currentSong?.id?.toString()
+
+    // Backward-compatibility properties
+    val isShuffle: Boolean get() = shuffle
+    val loopMode: LoopMode get() = when (repeat) {
+        RepeatMode.OFF -> LoopMode.OFF
+        RepeatMode.CONTEXT -> LoopMode.ALL
+        RepeatMode.TRACK -> LoopMode.ONE
+    }
+    val queue: List<Song> get() = contextOrder
+    val currentIndex: Int get() = contextIndex
+    val originalQueue: List<Song> get() = context?.tracks ?: emptyList()
+    val playbackSource: String get() = context?.name ?: "Now Playing"
     val upNext: List<Song> get() = userQueue
 }
 
@@ -68,7 +103,7 @@ class AudioController private constructor(private val context: Context) {
         ExoPlayer.Builder(context, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
     }
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -137,62 +172,91 @@ class AudioController private constructor(private val context: Context) {
         progressJob = null
     }
 
-    fun playQueue(songs: List<Song>, startIndex: Int = 0, source: String = "Alaktra Stream") {
+    fun playContext(
+        context: PlaybackContext,
+        startIndex: Int = 0,
+        autoShuffle: Boolean = false
+    ) {
+        val songs = context.tracks
         if (songs.isEmpty()) return
         val validIndex = startIndex.coerceIn(0, songs.size - 1)
-        val isShuffle = _playbackState.value.isShuffle
-        if (isShuffle) {
+        val shouldShuffle = autoShuffle || _playbackState.value.shuffle
+
+        val activeOrder = if (shouldShuffle) {
             val startSong = songs[validIndex]
-            val otherSongs = songs.filterIndexed { i, _ -> i != validIndex }.shuffled()
-            val shuffledQueue = listOf(startSong) + otherSongs
-            _playbackState.value = _playbackState.value.copy(
-                originalQueue = songs,
-                queue = shuffledQueue,
-                currentIndex = 0,
-                userQueue = emptyList(),
-                playbackSource = source
-            )
-            playSongAtIndex(0)
+            val otherSongs = songs.filterIndexed { i, _ -> i != validIndex }
+            val shuffledOthers = ShuffleUtils.artistSpreadShuffle(otherSongs)
+            listOf(startSong) + shuffledOthers
         } else {
-            _playbackState.value = _playbackState.value.copy(
-                originalQueue = songs,
-                queue = songs,
-                currentIndex = validIndex,
-                userQueue = emptyList(),
-                playbackSource = source
-            )
-            playSongAtIndex(validIndex)
+            songs
         }
+        val activeIndex = if (shouldShuffle) 0 else validIndex
+
+        // Starting a new context must NOT clear userQueue — queued tracks survive a context change (Spotify behavior)
+        var updatedState = _playbackState.value.copy(
+            context = context,
+            contextOrder = activeOrder,
+            contextIndex = activeIndex,
+            shuffle = shouldShuffle,
+            autoplayTracks = emptyList()
+        )
+        updatedState = ensureContextBuffer(updatedState)
+        _playbackState.value = updatedState
+        playSongAtIndex(updatedState.contextIndex)
+    }
+
+    fun playQueue(songs: List<Song>, startIndex: Int = 0, source: String = "Alaktra Stream") {
+        if (songs.isEmpty()) return
+        val contextType = when {
+            source.startsWith("Album", ignoreCase = true) -> ContextType.ALBUM
+            source.startsWith("Artist", ignoreCase = true) -> ContextType.ARTIST
+            source.startsWith("Search", ignoreCase = true) -> ContextType.SEARCH
+            else -> ContextType.PLAYLIST
+        }
+        val ctx = PlaybackContext(
+            uri = "alaktra:${contextType.name.lowercase()}:${source.replace(" ", "_").lowercase()}",
+            type = contextType,
+            name = source,
+            trackIds = songs.map { it.id },
+            tracks = songs
+        )
+        playContext(ctx, startIndex = startIndex)
     }
 
     fun playSong(song: Song, source: String = "Now Playing") {
-        val currentQueue = _playbackState.value.queue.toMutableList()
-        val existingIndex = currentQueue.indexOfFirst { it.id == song.id }
-        if (existingIndex != -1) {
+        val currentOrder = _playbackState.value.contextOrder
+        val existingIndex = currentOrder.indexOfFirst { it.id == song.id }
+        if (existingIndex != -1 && _playbackState.value.context != null) {
             _playbackState.value = _playbackState.value.copy(
-                currentIndex = existingIndex,
-                playbackSource = source
+                contextIndex = existingIndex
             )
             playSongAtIndex(existingIndex)
         } else {
-            currentQueue.add(0, song)
-            val updatedOriginal = listOf(song) + _playbackState.value.originalQueue.filter { it.id != song.id }
-            _playbackState.value = _playbackState.value.copy(
-                queue = currentQueue,
-                originalQueue = updatedOriginal,
-                currentIndex = 0,
-                playbackSource = source
+            val ctx = PlaybackContext(
+                uri = "alaktra:track:${song.id}",
+                type = ContextType.SEARCH,
+                name = source,
+                trackIds = listOf(song.id),
+                tracks = listOf(song)
             )
-            playSongAtIndex(0)
+            playContext(ctx, startIndex = 0)
         }
     }
 
-    private fun playSongDirectly(song: Song) {
+    private fun playSongDirectly(song: Song, pushToHistory: Boolean = false) {
         val state = _playbackState.value
+        val updatedHistory = if (pushToHistory && state.currentSong != null) {
+            val wasContext = state.contextOrder.getOrNull(state.contextIndex)?.id == state.currentSong.id
+            if (wasContext) state.history + state.currentSong else state.history
+        } else {
+            state.history
+        }
+
         _playbackState.value = state.copy(
             currentSong = song,
             currentPositionMs = 0L,
-            durationMs = (song.duration * 1000).toLong()
+            durationMs = (song.duration * 1000).toLong(),
+            history = updatedHistory
         )
 
         // Resolve local file if available
@@ -218,13 +282,7 @@ class AudioController private constructor(private val context: Context) {
         player.prepare()
         player.play()
 
-        // Ensure playback service is started
-        try {
-            val serviceIntent = Intent(context, MusicPlaybackService::class.java)
-            context.startService(serviceIntent)
-        } catch (e: Exception) {
-            Log.w("AudioController", "Could not start playback service: ${e.message}")
-        }
+        ensureServiceStarted()
 
         // Extract palette from cover
         extractPalette(song.coverUrl)
@@ -235,12 +293,12 @@ class AudioController private constructor(private val context: Context) {
 
     private fun playSongAtIndex(index: Int) {
         val state = _playbackState.value
-        if (index !in state.queue.indices) return
+        if (index !in state.contextOrder.indices) return
 
-        val song = state.queue[index]
+        val song = state.contextOrder[index]
         _playbackState.value = state.copy(
             currentSong = song,
-            currentIndex = index,
+            contextIndex = index,
             currentPositionMs = 0L,
             durationMs = (song.duration * 1000).toLong()
         )
@@ -268,19 +326,22 @@ class AudioController private constructor(private val context: Context) {
         player.prepare()
         player.play()
 
-        // Ensure playback service is started
-        try {
-            val serviceIntent = Intent(context, MusicPlaybackService::class.java)
-            context.startService(serviceIntent)
-        } catch (e: Exception) {
-            Log.w("AudioController", "Could not start playback service: ${e.message}")
-        }
+        ensureServiceStarted()
 
         // Extract palette from cover
         extractPalette(song.coverUrl)
 
         // Record listening history
         recordHistory(song)
+    }
+
+    fun ensureServiceStarted() {
+        try {
+            val serviceIntent = Intent(context, MusicPlaybackService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.w("AudioController", "Could not start playback service: ${e.message}")
+        }
     }
 
     private var lastRecordedSongId: Int? = null
@@ -318,9 +379,10 @@ class AudioController private constructor(private val context: Context) {
         if (player.isPlaying) {
             player.pause()
         } else {
-            if (_playbackState.value.currentSong == null && _playbackState.value.queue.isNotEmpty()) {
+            if (_playbackState.value.currentSong == null && _playbackState.value.contextOrder.isNotEmpty()) {
                 playSongAtIndex(0)
             } else {
+                ensureServiceStarted()
                 player.play()
             }
         }
@@ -331,6 +393,7 @@ class AudioController private constructor(private val context: Context) {
     }
 
     fun play() {
+        ensureServiceStarted()
         player.play()
     }
 
@@ -339,97 +402,305 @@ class AudioController private constructor(private val context: Context) {
         _playbackState.value = _playbackState.value.copy(currentPositionMs = positionMs)
     }
 
-    fun next() {
+    /**
+     * Advance ladder: strict top-down execution with early returns (Steps 1-4).
+     */
+    fun advanceTrack(reason: AdvanceReason) {
         val state = _playbackState.value
-        // 1. Layer 1: Check user-added queue ("Next in Queue") first (Spotify priority)
+
+        // 1. repeat === 'track' && reason === 'ended'
+        //    -> reset elapsedSec to 0, keep currentTrackId, return.
+        //    This check sits ABOVE the user queue on purpose: a queued song must not cut
+        //    into a looping track. An explicit skip press still moves on.
+        if (state.repeat == RepeatMode.TRACK && reason == AdvanceReason.ENDED) {
+            seekTo(0)
+            player.play()
+            return
+        }
+
+        // 2. userQueue.length > 0
+        //    -> shift the head, set it as currentTrackId, return.
+        //    contextIndex does NOT move. Do not push the outgoing track to history if it
+        //    itself came from the user queue.
         if (state.userQueue.isNotEmpty()) {
             val nextSong = state.userQueue.first()
             val remainingUserQueue = state.userQueue.drop(1)
             _playbackState.value = state.copy(userQueue = remainingUserQueue)
-            playSongDirectly(nextSong)
+            playSongDirectly(nextSong, pushToHistory = false)
             return
         }
 
-        // 2. Layer 2: Ambient / Context queue from current playlist/album/stream
-        if (state.queue.isEmpty()) return
-
-        val nextIndex = state.currentIndex + 1
-        if (nextIndex < state.queue.size) {
-            playSongAtIndex(nextIndex)
-        } else if (state.loopMode == LoopMode.ALL) {
-            if (state.isShuffle) {
-                // Reshuffle for next round when loop is active
-                val original = if (state.originalQueue.isNotEmpty()) state.originalQueue else state.queue
-                val reshuffled = original.shuffled()
-                _playbackState.value = state.copy(queue = reshuffled, currentIndex = 0)
-                playSongAtIndex(0)
+        // 3. contextIndex + 1 < contextOrder.length
+        //    -> push outgoing track to history, increment contextIndex, play
+        //       contextOrder[contextIndex], return.
+        val nextIndex = state.contextIndex + 1
+        if (nextIndex < state.contextOrder.size) {
+            val outgoingTrack = state.currentSong
+            val wasContext = outgoingTrack != null && state.contextOrder.getOrNull(state.contextIndex)?.id == outgoingTrack.id
+            val updatedHistory = if (outgoingTrack != null && wasContext) {
+                state.history + outgoingTrack
             } else {
-                playSongAtIndex(0)
+                state.history
             }
+            var updatedState = state.copy(
+                contextIndex = nextIndex,
+                history = updatedHistory
+            )
+            updatedState = ensureContextBuffer(updatedState)
+            _playbackState.value = updatedState
+            playSongAtIndex(updatedState.contextIndex)
+            return
+        }
+
+        // 4. context exhausted:
+        //    - repeat === 'context' -> if shuffle is on, regenerate contextOrder with a
+        //      FRESH seed (never replay the same random order), set contextIndex = 0,
+        //      play it.
+        //    - otherwise -> populate autoplayTracks and play the first one.
+        if (state.repeat == RepeatMode.CONTEXT && state.contextOrder.isNotEmpty()) {
+            val outgoingTrack = state.currentSong
+            val wasContext = outgoingTrack != null && state.contextOrder.getOrNull(state.contextIndex)?.id == outgoingTrack.id
+            val updatedHistory = if (outgoingTrack != null && wasContext) {
+                state.history + outgoingTrack
+            } else {
+                state.history
+            }
+            val naturalTracks = state.context?.tracks ?: state.contextOrder
+            val newOrder = if (state.shuffle) {
+                ShuffleUtils.artistSpreadShuffle(naturalTracks)
+            } else {
+                naturalTracks
+            }
+            var updatedState = state.copy(
+                contextOrder = newOrder,
+                contextIndex = 0,
+                history = updatedHistory
+            )
+            updatedState = ensureContextBuffer(updatedState)
+            _playbackState.value = updatedState
+            playSongAtIndex(updatedState.contextIndex)
+            return
+        } else {
+            // While repeat !== 'off', autoplay never triggers
+            if (state.repeat == RepeatMode.OFF) {
+                if (state.autoplayTracks.isNotEmpty()) {
+                    val nextAutoplay = state.autoplayTracks.first()
+                    val remainingAutoplay = state.autoplayTracks.drop(1)
+                    _playbackState.value = state.copy(autoplayTracks = remainingAutoplay)
+                    playSongDirectly(nextAutoplay, pushToHistory = false)
+                    return
+                } else {
+                    val candidateTracks = state.context?.tracks ?: emptyList()
+                    if (candidateTracks.isNotEmpty()) {
+                        val generated = candidateTracks.shuffled().take(5)
+                        val first = generated.first()
+                        val remaining = generated.drop(1)
+                        _playbackState.value = state.copy(autoplayTracks = remaining)
+                        playSongDirectly(first, pushToHistory = false)
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    fun next() {
+        advanceTrack(AdvanceReason.SKIP)
+    }
+
+    /**
+     * previousTrack(): if elapsedSec > 3, restart current track. Otherwise pop
+     * history. Never return to a consumed userQueue track.
+     */
+    fun previousTrack() {
+        val state = _playbackState.value
+        val elapsedSec = state.currentPositionMs / 1000
+        if (elapsedSec > 3) {
+            seekTo(0)
+            return
+        }
+
+        if (state.history.isNotEmpty()) {
+            val lastPlayed = state.history.last()
+            val remainingHistory = state.history.dropLast(1)
+            val orderIndex = state.contextOrder.indexOfFirst { it.id == lastPlayed.id }
+            val newIndex = if (orderIndex != -1) orderIndex else state.contextIndex
+            _playbackState.value = state.copy(
+                history = remainingHistory,
+                contextIndex = newIndex
+            )
+            playSongDirectly(lastPlayed, pushToHistory = false)
+        } else if (state.contextIndex > 0) {
+            val prevIndex = state.contextIndex - 1
+            _playbackState.value = state.copy(contextIndex = prevIndex)
+            playSongAtIndex(prevIndex)
+        } else {
+            seekTo(0)
         }
     }
 
     fun previous() {
-        val state = _playbackState.value
-        if (player.currentPosition > 3000) {
-            seekTo(0)
-            return
+        previousTrack()
+    }
+
+    /**
+     * Shuffle is a property of the CONTEXT layer only. It must never touch userQueue.
+     * toggleShuffle(true):
+     *   - generate a shuffled ordering of context.trackIds
+     *   - move currentTrackId to position 0 of that ordering
+     *   - set contextIndex = 0
+     *   - the currently playing track must NOT change when shuffle is toggled
+     * toggleShuffle(false):
+     *   - contextOrder = [...context.trackIds]
+     *   - contextIndex = contextOrder.indexOf(currentTrackId)
+     *   - position preserved; only the neighbours change
+     */
+    fun ensureContextBuffer(state: PlaybackState): PlaybackState {
+        val contextTracks = state.context?.tracks ?: state.contextOrder
+        if (contextTracks.isEmpty()) return state
+
+        // When repeat context is active, maintain at least 30 upcoming tracks ahead of contextIndex
+        if (state.repeat != RepeatMode.CONTEXT) {
+            return state
         }
-        val prevIndex = state.currentIndex - 1
-        if (prevIndex >= 0) {
-            playSongAtIndex(prevIndex)
-        } else if (state.queue.isNotEmpty()) {
-            playSongAtIndex(state.queue.size - 1)
+
+        var order = state.contextOrder.toMutableList()
+        var cIndex = state.contextIndex.coerceAtLeast(0)
+
+        if (order.isEmpty()) {
+            val seed = if (state.shuffle) {
+                ShuffleUtils.artistSpreadShuffle(contextTracks)
+            } else {
+                contextTracks
+            }
+            order.addAll(seed)
+            cIndex = 0
+        }
+
+        val targetUpcoming = 30
+        var upcoming = (order.size - 1) - cIndex
+
+        while (upcoming < targetUpcoming) {
+            if (state.shuffle) {
+                // Loop All + Shuffle = continuous random stream
+                // Pick a random song from contextTracks, avoiding immediate back-to-back duplicate if context has > 1 song
+                val lastId = order.lastOrNull()?.id
+                val candidates = if (contextTracks.size > 1 && lastId != null) {
+                    val filtered = contextTracks.filter { it.id != lastId }
+                    if (filtered.isNotEmpty()) filtered else contextTracks
+                } else {
+                    contextTracks
+                }
+                val randomSong = candidates.random()
+                order.add(randomSong)
+                upcoming += 1
+            } else {
+                // Loop All + Shuffle OFF = repeat the normal playlist order
+                order.addAll(contextTracks)
+                upcoming += contextTracks.size
+            }
+        }
+
+        // Keep order bounded so memory does not grow unbounded over long sessions
+        if (cIndex > 40) {
+            val trimCount = cIndex - 10
+            order = order.drop(trimCount).toMutableList()
+            cIndex = 10
+        }
+
+        return state.copy(
+            contextOrder = order,
+            contextIndex = cIndex
+        )
+    }
+
+    fun ensureBuffer() {
+        val updated = ensureContextBuffer(_playbackState.value)
+        if (updated != _playbackState.value) {
+            _playbackState.value = updated
         }
     }
 
-    fun toggleShuffle() {
+    fun toggleShuffle(forceEnable: Boolean? = null) {
         val state = _playbackState.value
-        val newShuffle = !state.isShuffle
-        if (newShuffle) {
-            // Turning shuffle ON: Spotify keeps current song playing and randomizes the upcoming queue
-            val currentSong = state.currentSong
-            if (currentSong != null && state.queue.isNotEmpty()) {
-                val original = if (state.originalQueue.isNotEmpty()) state.originalQueue else state.queue
-                val otherSongs = original.filter { it.id != currentSong.id }.shuffled()
-                val newQueue = listOf(currentSong) + otherSongs
-                _playbackState.value = state.copy(
-                    isShuffle = true,
-                    originalQueue = original,
-                    queue = newQueue,
-                    currentIndex = 0
+        val newShuffle = forceEnable ?: !state.shuffle
+        val naturalTracks = state.context?.tracks ?: state.contextOrder
+
+        if (naturalTracks.isEmpty()) return
+
+        val currentSong = state.currentSong
+        var newState = if (newShuffle) {
+            if (currentSong != null && naturalTracks.isNotEmpty()) {
+                val otherSongs = naturalTracks.filter { it.id != currentSong.id }
+                val shuffledOthers = ShuffleUtils.artistSpreadShuffle(otherSongs)
+                val newOrder = listOf(currentSong) + shuffledOthers
+                state.copy(
+                    shuffle = true,
+                    contextOrder = newOrder,
+                    contextIndex = 0
                 )
             } else {
-                _playbackState.value = state.copy(isShuffle = true)
+                val shuffled = ShuffleUtils.artistSpreadShuffle(naturalTracks)
+                state.copy(
+                    shuffle = true,
+                    contextOrder = shuffled,
+                    contextIndex = 0
+                )
             }
         } else {
-            // Turning shuffle OFF: Spotify restores original context sequence
-            val currentSong = state.currentSong
-            if (state.originalQueue.isNotEmpty() && currentSong != null) {
-                val original = state.originalQueue
-                val originalIndex = original.indexOfFirst { it.id == currentSong.id }
-                val restoreIndex = if (originalIndex != -1) originalIndex else 0
-                _playbackState.value = state.copy(
-                    isShuffle = false,
-                    queue = original,
-                    currentIndex = restoreIndex
-                )
+            val restoredIndex = if (currentSong != null) {
+                val idx = naturalTracks.indexOfFirst { it.id == currentSong.id }
+                if (idx != -1) idx else 0
             } else {
-                _playbackState.value = state.copy(isShuffle = false)
+                0
+            }
+            state.copy(
+                shuffle = false,
+                contextOrder = naturalTracks,
+                contextIndex = restoredIndex
+            )
+        }
+
+        newState = ensureContextBuffer(newState)
+        _playbackState.value = newState
+    }
+
+    /**
+     * Repeat cycle: OFF -> CONTEXT -> TRACK -> OFF
+     */
+    fun cycleRepeatMode(): RepeatMode {
+        val nextMode = when (_playbackState.value.repeat) {
+            RepeatMode.OFF -> RepeatMode.CONTEXT
+            RepeatMode.CONTEXT -> RepeatMode.TRACK
+            RepeatMode.TRACK -> RepeatMode.OFF
+        }
+        setRepeatMode(nextMode)
+        return nextMode
+    }
+
+    fun setRepeatMode(mode: RepeatMode) {
+        var state = _playbackState.value.copy(repeat = mode)
+        if (mode == RepeatMode.CONTEXT) {
+            state = ensureContextBuffer(state)
+        } else if (mode == RepeatMode.OFF) {
+            val naturalTracks = state.context?.tracks ?: emptyList()
+            if (naturalTracks.isNotEmpty()) {
+                val currentIdx = state.contextIndex
+                val naturalSize = naturalTracks.size
+                val maxLimit = currentIdx + 1 + naturalSize
+                if (state.contextOrder.size > maxLimit) {
+                    state = state.copy(contextOrder = state.contextOrder.take(maxLimit))
+                }
             }
         }
+        _playbackState.value = state
     }
 
     fun toggleLoop() {
-        val nextMode = when (_playbackState.value.loopMode) {
-            LoopMode.OFF -> LoopMode.ALL
-            LoopMode.ALL -> LoopMode.ONE
-            LoopMode.ONE -> LoopMode.OFF
-        }
-        _playbackState.value = _playbackState.value.copy(loopMode = nextMode)
+        cycleRepeatMode()
     }
 
-    /** Add song to the end of user queue ("Next in Queue") */
+    /** Add song to the end of user queue ("Next in Queue") - Destructive FIFO */
     fun addToQueue(song: Song) {
         val updated = _playbackState.value.userQueue + song
         _playbackState.value = _playbackState.value.copy(userQueue = updated)
@@ -446,6 +717,22 @@ class AudioController private constructor(private val context: Context) {
         addToQueue(song)
     }
 
+    /** Promote a track from context layer into userQueue */
+    fun promoteToUserQueue(song: Song) {
+        // Pushes track into userQueue without modifying contextOrder or removing from context
+        _playbackState.value = _playbackState.value.copy(
+            userQueue = _playbackState.value.userQueue + song
+        )
+    }
+
+    /** Promote a track from context layer into userQueue at specific position */
+    fun promoteToUserQueueAt(song: Song, targetIndex: Int) {
+        val current = _playbackState.value.userQueue.toMutableList()
+        val clamped = targetIndex.coerceIn(0, current.size)
+        current.add(clamped, song)
+        _playbackState.value = _playbackState.value.copy(userQueue = current)
+    }
+
     /** Remove a song from the user-enqueued layer */
     fun removeFromUserQueue(index: Int) {
         val current = _playbackState.value.userQueue.toMutableList()
@@ -455,7 +742,7 @@ class AudioController private constructor(private val context: Context) {
         }
     }
 
-    /** Clear all songs from the user-enqueued layer */
+    /** Clear all songs from the user-enqueued layer (scoped to user queue only) */
     fun clearUserQueue() {
         _playbackState.value = _playbackState.value.copy(userQueue = emptyList())
     }
@@ -476,50 +763,67 @@ class AudioController private constructor(private val context: Context) {
         if (index in current.indices) {
             val songToPlay = current.removeAt(index)
             _playbackState.value = _playbackState.value.copy(userQueue = current)
-            playSongDirectly(songToPlay)
+            playSongDirectly(songToPlay, pushToHistory = false)
         }
     }
 
     /** Play a song directly from the context queue */
     fun playContextQueueItem(index: Int) {
-        if (index in _playbackState.value.queue.indices) {
-            playSongAtIndex(index)
+        if (index in _playbackState.value.contextOrder.indices) {
+            val outgoingTrack = _playbackState.value.currentSong
+            val wasContext = outgoingTrack != null && _playbackState.value.contextOrder.getOrNull(_playbackState.value.contextIndex)?.id == outgoingTrack.id
+            val updatedHistory = if (outgoingTrack != null && wasContext) {
+                _playbackState.value.history + outgoingTrack
+            } else {
+                _playbackState.value.history
+            }
+            var updatedState = _playbackState.value.copy(
+                contextIndex = index,
+                history = updatedHistory
+            )
+            updatedState = ensureContextBuffer(updatedState)
+            _playbackState.value = updatedState
+            playSongAtIndex(updatedState.contextIndex)
         }
     }
 
     /** Remove a song from the base/context queue */
     fun removeFromQueue(index: Int) {
-        val currentQueue = _playbackState.value.queue.toMutableList()
-        if (index in currentQueue.indices) {
-            val removedSong = currentQueue.removeAt(index)
-            val updatedOriginal = _playbackState.value.originalQueue.filter { it.id != removedSong.id }
-            var newIdx = _playbackState.value.currentIndex
+        val currentOrder = _playbackState.value.contextOrder.toMutableList()
+        if (index in currentOrder.indices) {
+            val removedSong = currentOrder.removeAt(index)
+            val updatedNatural = _playbackState.value.context?.tracks?.filter { it.id != removedSong.id } ?: currentOrder
+            var newIdx = _playbackState.value.contextIndex
             if (index < newIdx) {
                 newIdx--
-            } else if (index == newIdx && currentQueue.isNotEmpty()) {
-                newIdx = newIdx.coerceAtMost(currentQueue.size - 1)
+            } else if (index == newIdx && currentOrder.isNotEmpty()) {
+                newIdx = newIdx.coerceAtMost(currentOrder.size - 1)
                 playSongAtIndex(newIdx)
             }
-            _playbackState.value = _playbackState.value.copy(
-                queue = currentQueue,
-                originalQueue = updatedOriginal,
-                currentIndex = newIdx
+            val updatedContext = _playbackState.value.context?.copy(
+                tracks = updatedNatural,
+                trackIds = updatedNatural.map { it.id }
             )
+            var updatedState = _playbackState.value.copy(
+                context = updatedContext,
+                contextOrder = currentOrder,
+                contextIndex = newIdx
+            )
+            updatedState = ensureContextBuffer(updatedState)
+            _playbackState.value = updatedState
         }
     }
 
     fun reorderQueue(from: Int, to: Int) {
-        val currentQueue = _playbackState.value.queue.toMutableList()
-        if (from in currentQueue.indices && to in currentQueue.indices) {
-            val moved = currentQueue.removeAt(from)
-            currentQueue.add(to, moved)
+        val currentOrder = _playbackState.value.contextOrder.toMutableList()
+        if (from in currentOrder.indices && to in currentOrder.indices) {
+            val moved = currentOrder.removeAt(from)
+            currentOrder.add(to, moved)
             val currSong = _playbackState.value.currentSong
-            val newIndex = if (currSong != null) currentQueue.indexOfFirst { it.id == currSong.id } else _playbackState.value.currentIndex
-            val updatedOriginal = if (!_playbackState.value.isShuffle) currentQueue else _playbackState.value.originalQueue
+            val newIndex = if (currSong != null) currentOrder.indexOfFirst { it.id == currSong.id } else _playbackState.value.contextIndex
             _playbackState.value = _playbackState.value.copy(
-                queue = currentQueue,
-                originalQueue = updatedOriginal,
-                currentIndex = if (newIndex != -1) newIndex else _playbackState.value.currentIndex
+                contextOrder = currentOrder,
+                contextIndex = if (newIndex != -1) newIndex else _playbackState.value.contextIndex
             )
         }
     }
@@ -534,23 +838,21 @@ class AudioController private constructor(private val context: Context) {
             seekTo(0)
             return
         }
-        when (_playbackState.value.loopMode) {
-            LoopMode.ONE -> {
-                seekTo(0)
-                player.play()
-            }
-            else -> next()
-        }
+        advanceTrack(AdvanceReason.ENDED)
     }
 
     fun updateSongLiked(songId: Int, isLiked: Boolean) {
         val state = _playbackState.value
-        val updatedQueue = state.queue.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
+        val updatedOrder = state.contextOrder.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
         val updatedSong = if (state.currentSong?.id == songId) state.currentSong.copy(isLiked = isLiked) else state.currentSong
         val updatedUserQueue = state.userQueue.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
+        val updatedContext = state.context?.copy(
+            tracks = state.context.tracks.map { if (it.id == songId) it.copy(isLiked = isLiked) else it }
+        )
 
         _playbackState.value = state.copy(
-            queue = updatedQueue,
+            context = updatedContext,
+            contextOrder = updatedOrder,
             currentSong = updatedSong,
             userQueue = updatedUserQueue
         )

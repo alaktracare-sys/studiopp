@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.AudioController
+import com.example.audio.ContextType
+import com.example.audio.PlaybackContext
 import com.example.data.repository.MusicRepository
 import com.example.model.Song
 import com.example.ui.components.SongItemRow
@@ -197,8 +199,14 @@ fun PlaylistScreen(
                         IconButton(
                             onClick = {
                                 if (songs.isNotEmpty()) {
-                                    val shuffled = songs.shuffled()
-                                    audioController.playQueue(shuffled, 0, source = "Shuffle: $playlistName")
+                                    val ctx = PlaybackContext(
+                                        uri = "alaktra:playlist:$playlistId",
+                                        type = ContextType.PLAYLIST,
+                                        name = playlistName,
+                                        trackIds = songs.map { it.id },
+                                        tracks = songs
+                                    )
+                                    audioController.playContext(ctx, startIndex = 0, autoShuffle = true)
                                 }
                             },
                             modifier = Modifier
@@ -225,7 +233,14 @@ fun PlaylistScreen(
                             .background(Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan)))
                             .clickable {
                                 if (songs.isNotEmpty()) {
-                                    audioController.playQueue(songs, 0, source = "Playlist: $playlistName")
+                                    val ctx = PlaybackContext(
+                                        uri = "alaktra:playlist:$playlistId",
+                                        type = ContextType.PLAYLIST,
+                                        name = playlistName,
+                                        trackIds = songs.map { it.id },
+                                        tracks = songs
+                                    )
+                                    audioController.playContext(ctx, startIndex = 0, autoShuffle = false)
                                 }
                             }
                     ) {
@@ -325,7 +340,16 @@ fun PlaylistScreen(
                         song = song,
                         isPlaying = isCurrent && playbackState.isPlaying,
                         downloadProgress = downloadProgress[song.id],
-                        onSongClick = { audioController.playQueue(songs, index, source = "Playlist: $playlistName") },
+                        onSongClick = {
+                            val ctx = PlaybackContext(
+                                uri = "alaktra:playlist:$playlistId",
+                                type = ContextType.PLAYLIST,
+                                name = playlistName,
+                                trackIds = songs.map { it.id },
+                                tracks = songs
+                            )
+                            audioController.playContext(ctx, startIndex = index, autoShuffle = false)
+                        },
                         onLikeToggle = {
                             scope.launch {
                                 val isLiked = repository.toggleLike(song)

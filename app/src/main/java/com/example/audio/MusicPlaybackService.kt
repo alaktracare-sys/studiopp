@@ -25,13 +25,21 @@ class MusicPlaybackService : MediaSessionService() {
             .build()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Do NOT aggressively kill playback when app task is swiped away or backgrounded.
+        // If user explicitly paused and queue is empty, allow service to stop.
         val player = mediaSession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+        if (player != null && !player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_BUFFERING && player.mediaItemCount == 0) {
             stopSelf()
         }
     }

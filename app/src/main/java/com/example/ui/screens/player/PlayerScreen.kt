@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.example.audio.AudioController
 import com.example.audio.PlaybackState
+import com.example.audio.RepeatMode
 import com.example.ui.components.SongCover
 import com.example.ui.theme.*
 import java.util.Locale
@@ -471,12 +472,26 @@ fun PlayerScreen(
                                 onClick = { audioController.toggleShuffle() },
                                 modifier = Modifier.size(sideControlSize)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Shuffle,
-                                    contentDescription = "Shuffle",
-                                    tint = if (playbackState.isShuffle) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(sideIconSize)
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = "Shuffle",
+                                        tint = if (playbackState.shuffle) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(sideIconSize)
+                                    )
+                                    if (playbackState.shuffle) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(top = 2.dp)
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF1DB954))
+                                        )
+                                    }
+                                }
                             }
 
                             IconButton(
@@ -520,21 +535,35 @@ fun PlayerScreen(
                             }
 
                             IconButton(
-                                onClick = { audioController.toggleLoop() },
+                                onClick = { audioController.cycleRepeatMode() },
                                 modifier = Modifier.size(sideControlSize)
                             ) {
-                                val isLoopActive = playbackState.loopMode != com.example.audio.LoopMode.OFF
-                                val loopIcon = if (playbackState.loopMode == com.example.audio.LoopMode.ONE) {
+                                val isRepeatActive = playbackState.repeat != RepeatMode.OFF
+                                val loopIcon = if (playbackState.repeat == RepeatMode.TRACK) {
                                     Icons.Default.RepeatOne
                                 } else {
                                     Icons.Default.Repeat
                                 }
-                                Icon(
-                                    imageVector = loopIcon,
-                                    contentDescription = "Loop Mode",
-                                    tint = if (isLoopActive) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(sideIconSize)
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = loopIcon,
+                                        contentDescription = "Repeat Mode",
+                                        tint = if (isRepeatActive) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(sideIconSize)
+                                    )
+                                    if (isRepeatActive) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(top = 2.dp)
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF1DB954))
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -726,12 +755,26 @@ fun PlayerScreen(
                         onClick = { audioController.toggleShuffle() },
                         modifier = Modifier.size(sideControlSize)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle",
-                            tint = if (playbackState.isShuffle) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                            modifier = Modifier.size(sideIconSize)
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (playbackState.shuffle) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(sideIconSize)
+                            )
+                            if (playbackState.shuffle) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 2.dp)
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1DB954))
+                                )
+                            }
+                        }
                     }
 
                     // Previous
@@ -779,21 +822,35 @@ fun PlayerScreen(
 
                     // Loop / Repeat button
                     IconButton(
-                        onClick = { audioController.toggleLoop() },
+                        onClick = { audioController.cycleRepeatMode() },
                         modifier = Modifier.size(sideControlSize)
                     ) {
-                        val isLoopActive = playbackState.loopMode != com.example.audio.LoopMode.OFF
-                        val loopIcon = if (playbackState.loopMode == com.example.audio.LoopMode.ONE) {
+                        val isRepeatActive = playbackState.repeat != RepeatMode.OFF
+                        val loopIcon = if (playbackState.repeat == RepeatMode.TRACK) {
                             Icons.Default.RepeatOne
                         } else {
                             Icons.Default.Repeat
                         }
-                        Icon(
-                            imageVector = loopIcon,
-                            contentDescription = "Loop Mode",
-                            tint = if (isLoopActive) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
-                            modifier = Modifier.size(sideIconSize)
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = loopIcon,
+                                contentDescription = "Repeat Mode",
+                                tint = if (isRepeatActive) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(sideIconSize)
+                            )
+                            if (isRepeatActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 2.dp)
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1DB954))
+                                )
+                            }
+                        }
                     }
                 }
 
