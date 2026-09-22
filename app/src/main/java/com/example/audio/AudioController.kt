@@ -10,6 +10,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -17,6 +18,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.palette.graphics.Palette
@@ -60,6 +62,7 @@ data class PlaybackState(
     val contextIndex: Int = -1,                  // pointer into contextOrder
     val userQueue: List<Song> = emptyList(),       // explicitly queued songs, FIFO, destructive
     val history: List<Song> = emptyList(),         // context plays only
+    val recentPlayedSongIds: List<Int> = emptyList(), // last 20 actually played song IDs
     val currentSong: Song? = null,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -100,16 +103,28 @@ class AudioController private constructor(private val context: Context) {
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                30_000,   // minBufferMs (30s)
+                120_000,  // maxBufferMs (2min)
+                2_500,    // bufferForPlaybackMs
+                5_000     // bufferForPlaybackAfterRebufferMs
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         ExoPlayer.Builder(context, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setLoadControl(loadControl)
             .build()
     }
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
+    val recentPlayedSongIds: List<Int> get() = _playbackState.value.recentPlayedSongIds
 
     private var progressJob: Job? = null
 
@@ -251,12 +266,14 @@ class AudioController private constructor(private val context: Context) {
         } else {
             state.history
         }
+        val updatedRecentPlayed = addToRecentPlayedHistory(song.id, state.recentPlayedSongIds)
 
         _playbackState.value = state.copy(
             currentSong = song,
             currentPositionMs = 0L,
             durationMs = (song.duration * 1000).toLong(),
-            history = updatedHistory
+            history = updatedHistory,
+            recentPlayedSongIds = updatedRecentPlayed
         )
 
         // Resolve local file if available
@@ -296,11 +313,13 @@ class AudioController private constructor(private val context: Context) {
         if (index !in state.contextOrder.indices) return
 
         val song = state.contextOrder[index]
+        val updatedRecentPlayed = addToRecentPlayedHistory(song.id, state.recentPlayedSongIds)
         _playbackState.value = state.copy(
             currentSong = song,
             contextIndex = index,
             currentPositionMs = 0L,
-            durationMs = (song.duration * 1000).toLong()
+            durationMs = (song.duration * 1000).toLong(),
+            recentPlayedSongIds = updatedRecentPlayed
         )
 
         // Resolve local file if available
@@ -338,7 +357,7 @@ class AudioController private constructor(private val context: Context) {
     fun ensureServiceStarted() {
         try {
             val serviceIntent = Intent(context, MusicPlaybackService::class.java)
-            context.startService(serviceIntent)
+            ContextCompat.startForegroundService(context, serviceIntent)
         } catch (e: Exception) {
             Log.w("AudioController", "Could not start playback service: ${e.message}")
         }
@@ -467,7 +486,14 @@ class AudioController private constructor(private val context: Context) {
             }
             val naturalTracks = state.context?.tracks ?: state.contextOrder
             val newOrder = if (state.shuffle) {
-                ShuffleUtils.artistSpreadShuffle(naturalTracks)
+                val shuffled = ShuffleUtils.artistSpreadShuffle(naturalTracks)
+                val eligibleIndex = shuffled.indexOfFirst { it.id !in state.recentPlayedSongIds }
+                if (eligibleIndex > 0) {
+                    val eligibleTrack = shuffled[eligibleIndex]
+                    listOf(eligibleTrack) + shuffled.filterIndexed { i, _ -> i != eligibleIndex }
+                } else {
+                    shuffled
+                }
             } else {
                 naturalTracks
             }
@@ -591,8 +617,8 @@ class AudioController private constructor(private val context: Context) {
                 } else {
                     contextTracks
                 }
-                val randomSong = candidates.random()
-                order.add(randomSong)
+                val selectedSong = selectShuffleCandidate(candidates, state.recentPlayedSongIds)
+                order.add(selectedSong)
                 upcoming += 1
             } else {
                 // Loop All + Shuffle OFF = repeat the normal playlist order
@@ -979,6 +1005,49 @@ class AudioController private constructor(private val context: Context) {
         fun getInstance(context: Context): AudioController {
             return instance ?: synchronized(this) {
                 instance ?: AudioController(context.applicationContext).also { instance = it }
+            }
+        }
+
+        /**
+         * Maintain at most the last 20 played song IDs in playback sequence.
+         * Consecutive duplicate plays (e.g. Loop One or immediate repeat) are not duplicated.
+         */
+        fun addToRecentPlayedHistory(songId: Int, currentHistory: List<Int>): List<Int> {
+            if (currentHistory.lastOrNull() == songId) {
+                return currentHistory
+            }
+            val updated = currentHistory + songId
+            return if (updated.size > 20) {
+                updated.takeLast(20)
+            } else {
+                updated
+            }
+        }
+
+        /**
+         * Automatic candidate selection for Shuffle = ON, Loop = ALL:
+         * 1. Existing shuffle logic selects candidate.
+         * 2. Candidate is checked against the last 20 actually played songs.
+         * 3. If in recent 20, candidate is rejected and an eligible alternative is selected.
+         * 4. If all candidates are in recent 20 (small libraries), fallback gracefully to avoid infinite loops.
+         */
+        fun selectShuffleCandidate(
+            candidates: List<Song>,
+            recentHistory: List<Int>
+        ): Song {
+            val candidate = candidates.random()
+            return if (candidate.id in recentHistory) {
+                val eligibleAlternatives = candidates.filter { it.id !in recentHistory }
+                if (eligibleAlternatives.isNotEmpty()) {
+                    // Reject candidate and select an eligible alternative
+                    eligibleAlternatives.random()
+                } else {
+                    // Graceful fallback for small library where all candidates exist in recent history
+                    candidate
+                }
+            } else {
+                // Accept candidate
+                candidate
             }
         }
     }

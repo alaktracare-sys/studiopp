@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,8 +26,6 @@ import com.example.model.Song
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
-enum class LibraryTab { ALL, PLAYLISTS, DOWNLOADS }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
@@ -39,7 +36,6 @@ fun LibraryScreen(
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var downloadedSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var likedSongsCount by remember { mutableIntStateOf(0) }
-    var selectedTab by remember { mutableStateOf(LibraryTab.ALL) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToEdit by remember { mutableStateOf<Playlist?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
@@ -53,18 +49,7 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        containerColor = AlaktraBackground,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showCreateDialog = true },
-                containerColor = AlaktraMint,
-                contentColor = Color(0xFF041C12),
-                shape = RoundedCornerShape(16.dp),
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New Playlist", fontWeight = FontWeight.Bold) },
-                modifier = Modifier.padding(bottom = 76.dp)
-            )
-        }
+        containerColor = AlaktraBackground
     ) { padding ->
         Box(
             modifier = Modifier
@@ -111,135 +96,72 @@ fun LibraryScreen(
                 }
             }
 
-            // Tabs / Filters
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = selectedTab == LibraryTab.ALL,
-                        onClick = { selectedTab = LibraryTab.ALL },
-                        label = { Text("All") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AlaktraMint,
-                            selectedLabelColor = Color(0xFF0A2218),
-                            containerColor = AlaktraSurface,
-                            labelColor = AlaktraTextSecondary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = if (selectedTab == LibraryTab.ALL) AlaktraMint else AlaktraBorder,
-                            enabled = true,
-                            selected = selectedTab == LibraryTab.ALL
-                        )
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedTab == LibraryTab.PLAYLISTS,
-                        onClick = { selectedTab = LibraryTab.PLAYLISTS },
-                        label = { Text("Playlists") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AlaktraMint,
-                            selectedLabelColor = Color(0xFF0A2218),
-                            containerColor = AlaktraSurface,
-                            labelColor = AlaktraTextSecondary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = if (selectedTab == LibraryTab.PLAYLISTS) AlaktraMint else AlaktraBorder,
-                            enabled = true,
-                            selected = selectedTab == LibraryTab.PLAYLISTS
-                        )
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedTab == LibraryTab.DOWNLOADS,
-                        onClick = { selectedTab = LibraryTab.DOWNLOADS },
-                        label = { Text("Downloaded (${downloadedSongs.size})") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AlaktraMint,
-                            selectedLabelColor = Color(0xFF0A2218),
-                            containerColor = AlaktraSurface,
-                            labelColor = AlaktraTextSecondary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = if (selectedTab == LibraryTab.DOWNLOADS) AlaktraMint else AlaktraBorder,
-                            enabled = true,
-                            selected = selectedTab == LibraryTab.DOWNLOADS
-                        )
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.height(6.dp))
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 150.dp)
+                contentPadding = PaddingValues(bottom = 110.dp)
             ) {
-                // Liked Songs card (show if tab is ALL or PLAYLISTS)
-                if (selectedTab != LibraryTab.DOWNLOADS) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                // Liked Songs card
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onNavigateToLikedSongs)
+                            .padding(horizontal = 20.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onNavigateToLikedSongs)
-                                .padding(horizontal = 20.dp, vertical = 8.dp)
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint)
+                                    )
+                                )
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint)
-                                        )
-                                    )
-                            ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Liked Songs",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = AlaktraTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.Favorite,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    imageVector = Icons.Default.PushPin,
+                                    contentDescription = "Pinned",
+                                    tint = AlaktraMint,
+                                    modifier = Modifier.size(14.dp)
                                 )
-                            }
-
-                            Spacer(modifier = Modifier.width(16.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Liked Songs",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    ),
-                                    color = AlaktraTextPrimary
+                                    text = "Auto playlist • $likedSongsCount tracks",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AlaktraTextSecondary
                                 )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.PushPin,
-                                        contentDescription = "Pinned",
-                                        tint = AlaktraMint,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Auto playlist • $likedSongsCount tracks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = AlaktraTextSecondary
-                                    )
-                                }
                             }
                         }
                     }
                 }
 
-                // Downloaded Card (if in ALL or DOWNLOADS)
-                if (selectedTab == LibraryTab.DOWNLOADS || (selectedTab == LibraryTab.ALL && downloadedSongs.isNotEmpty())) {
+                // Downloaded Card (if downloaded songs exist)
+                if (downloadedSongs.isNotEmpty()) {
                     item {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -290,32 +212,31 @@ fun LibraryScreen(
                 }
 
                 // Playlists List
-                if (selectedTab != LibraryTab.DOWNLOADS) {
-                    if (playlists.isEmpty()) {
-                        item {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp, horizontal = 24.dp)
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "No custom playlists yet",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = AlaktraTextPrimary
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Tap 'New Playlist' to create your first music collection.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = AlaktraTextSecondary
-                                    )
-                                }
+                if (playlists.isEmpty()) {
+                    item {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp, horizontal = 24.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "No custom playlists yet",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = AlaktraTextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tap '+' to create your first music collection.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AlaktraTextSecondary
+                                )
                             }
                         }
-                    } else {
-                        items(playlists) { playlist ->
+                    }
+                } else {
+                    items(playlists) { playlist ->
                             var menuExpanded by remember { mutableStateOf(false) }
 
                             Row(
@@ -400,7 +321,6 @@ fun LibraryScreen(
             }
         }
     }
-}
 
     // Create Playlist Dialog
     if (showCreateDialog) {

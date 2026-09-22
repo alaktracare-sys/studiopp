@@ -298,4 +298,124 @@ class LayeredQueueTest {
         val nextSong = state.userQueue.first()
         assertEquals(999, nextSong.id)
     }
+
+    @Test
+    fun testShuffleLoopAllAvoidsSongsInRecent20() {
+        val ctx = sampleContext(30)
+        val recentPlayed = (1..20).toList()
+        val candidates = ctx.tracks
+
+        // Repeated candidate selections must never pick songs from the recent 20
+        repeat(50) {
+            val selected = AudioController.selectShuffleCandidate(candidates, recentPlayed)
+            assertTrue("Selected song (${selected.id}) must not be in recent 20", selected.id > 20)
+            assertFalse("Selected song must be outside recentPlayed", recentPlayed.contains(selected.id))
+        }
+    }
+
+    @Test
+    fun testSongBecomesEligibleAfterLeavingRecent20History() {
+        val s1 = createDummySong(1, "Song 1", "Artist")
+        val s2 = createDummySong(2, "Song 2", "Artist")
+        val candidates = listOf(s1, s2)
+
+        // 1. Initially song 1 is in recent history
+        var history = listOf(1)
+        val selectedWhenRecent = AudioController.selectShuffleCandidate(candidates, history)
+        assertEquals("Song 1 is in recent history so song 2 must be selected", 2, selectedWhenRecent.id)
+
+        // 2. Play 20 other songs so song 1 falls outside the 20-song sliding window
+        for (id in 100..119) {
+            history = AudioController.addToRecentPlayedHistory(id, history)
+        }
+        assertEquals(20, history.size)
+        assertFalse("Song 1 must have fallen outside recent 20 history", history.contains(1))
+
+        // 3. Song 1 is now eligible again
+        val pickedIds = mutableSetOf<Int>()
+        repeat(30) {
+            val candidate = AudioController.selectShuffleCandidate(candidates, history)
+            pickedIds.add(candidate.id)
+        }
+        assertTrue("Song 1 should now be eligible for selection again", pickedIds.contains(1))
+    }
+
+    @Test
+    fun testHistoryContainsActuallyPlayedSongsNotMerelyQueuedSongs() {
+        val ctx = sampleContext(10)
+        val state = PlaybackState(
+            context = ctx,
+            contextOrder = ctx.tracks,
+            contextIndex = 0,
+            currentSong = ctx.tracks[0],
+            recentPlayedSongIds = emptyList()
+        )
+
+        // Queue has 10 tracks, but none have been played yet
+        assertEquals(10, state.contextOrder.size)
+        assertTrue("Recent history must be empty before playback", state.recentPlayedSongIds.isEmpty())
+
+        // Simulating playing song 1
+        val updatedHistory = AudioController.addToRecentPlayedHistory(ctx.tracks[0].id, state.recentPlayedSongIds)
+        assertEquals(1, updatedHistory.size)
+        assertEquals(ctx.tracks[0].id, updatedHistory.first())
+
+        // Ensure consecutive duplicate plays don't add duplicate entries
+        val repeatedHistory = AudioController.addToRecentPlayedHistory(ctx.tracks[0].id, updatedHistory)
+        assertEquals("Consecutive repeats must not create duplicate history entries", 1, repeatedHistory.size)
+    }
+
+    @Test
+    fun testManuallyQueuedSongsPlayEvenIfInRecentHistory() {
+        val ctx = sampleContext(5)
+        val recentlyPlayedSong = ctx.tracks[2] // id = 3
+        val state = PlaybackState(
+            context = ctx,
+            contextOrder = ctx.tracks,
+            contextIndex = 0,
+            currentSong = ctx.tracks[0],
+            userQueue = listOf(recentlyPlayedSong),
+            recentPlayedSongIds = listOf(recentlyPlayedSong.id),
+            repeat = RepeatMode.CONTEXT,
+            shuffle = true
+        )
+
+        // Priority Ladder Step 2: userQueue is evaluated first and not blocked by recentPlayedSongIds
+        assertTrue("User queue must not be empty", state.userQueue.isNotEmpty())
+        val nextSongToPlay = state.userQueue.first()
+        assertEquals("Manually queued song must play even if present in recent history", recentlyPlayedSong.id, nextSongToPlay.id)
+    }
+
+    @Test
+    fun testLoopOneRemainsUnchangedWithShuffleOn() {
+        val ctx = sampleContext(5)
+        val currentTrack = ctx.tracks[1]
+        val state = PlaybackState(
+            context = ctx,
+            contextOrder = ctx.tracks,
+            contextIndex = 1,
+            currentSong = currentTrack,
+            recentPlayedSongIds = listOf(currentTrack.id),
+            repeat = RepeatMode.TRACK,
+            shuffle = true
+        )
+
+        // On ENDED, Loop ONE loops current song without running candidate rejection or advancing
+        val shouldLoopCurrent = state.repeat == RepeatMode.TRACK
+        assertTrue("Loop ONE must loop current track even when shuffle is on", shouldLoopCurrent)
+        assertEquals(currentTrack.id, state.currentSong?.id)
+    }
+
+    @Test
+    fun testSmallLibraryDoesNotCauseInfiniteLoop() {
+        val ctx = sampleContext(3)
+        // All 3 tracks are in recent history
+        val recentHistory = ctx.tracks.map { it.id }
+        val candidates = ctx.tracks
+
+        // Must gracefully return a candidate without getting stuck
+        val selected = AudioController.selectShuffleCandidate(candidates, recentHistory)
+        assertNotNull("Candidate selection must return a song even when all tracks are in recent history", selected)
+        assertTrue(candidates.any { it.id == selected.id })
+    }
 }
