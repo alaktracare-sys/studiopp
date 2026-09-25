@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
         val app = application as AlreadyApp
         val repository = app.repository
         val audioController = app.audioController
-        audioController.ensureServiceStarted()
 
         setContent {
             AlaktraTheme {

@@ -61,20 +61,26 @@ class MusicRepository(private val context: Context) {
     private var cachedBaseUrl: String = authPreferences.getServerBaseUrl()
 
     @Volatile
-    private var apiInstance: MusicApiService = buildApiService(cachedBaseUrl)
+    private var apiInstance: MusicApiService? = null
 
     private val api: MusicApiService
         get() {
             val currentUrl = authPreferences.getServerBaseUrl()
-            if (currentUrl != cachedBaseUrl) {
-                synchronized(this) {
-                    if (currentUrl != cachedBaseUrl) {
-                        cachedBaseUrl = currentUrl
-                        apiInstance = buildApiService(currentUrl)
-                    }
+            val existing = apiInstance
+            if (existing != null && currentUrl == cachedBaseUrl) {
+                return existing
+            }
+            return synchronized(this) {
+                val current = apiInstance
+                if (current != null && currentUrl == cachedBaseUrl) {
+                    current
+                } else {
+                    cachedBaseUrl = currentUrl
+                    val newApi = buildApiService(currentUrl)
+                    apiInstance = newApi
+                    newApi
                 }
             }
-            return apiInstance
         }
 
     private fun buildApiService(baseUrl: String): MusicApiService {

@@ -49,8 +49,10 @@ class MusicPlaybackService : MediaSessionService() {
         } catch (e: Exception) {
             Log.w("MusicPlaybackService", "Failed to set custom notification provider", e)
         }
+    }
 
-        // 3. Bind player and session
+    private fun initializeSessionIfNeeded() {
+        if (mediaSession != null) return
         val player = AudioController.getInstance(applicationContext).player
         player.addListener(playerListener)
 
@@ -62,9 +64,11 @@ class MusicPlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        mediaSession = MediaSession.Builder(this, player)
+        val session = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
+        mediaSession = session
+        addSession(session)
 
         if (player.isPlaying) {
             acquireLocks()
@@ -88,21 +92,32 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        initializeSessionIfNeeded()
         return START_STICKY
     }
 
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        super.onUpdateNotification(session, startInForegroundRequired)
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        initializeSessionIfNeeded()
         return mediaSession
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        if (player != null && player.isPlaying) {
+        if (player != null && (player.isPlaying || player.playWhenReady)) {
             // Keep playing when task is removed from recents
             return
         }
         super.onTaskRemoved(rootIntent)
         if (player != null && !player.playWhenReady && player.mediaItemCount == 0) {
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (e: Exception) {
+                // Ignore
+            }
             stopSelf()
         }
     }
@@ -158,13 +173,20 @@ class MusicPlaybackService : MediaSessionService() {
         releaseLocks()
         mediaSession?.player?.removeListener(playerListener)
         mediaSession?.run {
+            removeSession(this)
             release()
             mediaSession = null
+        }
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (e: Exception) {
+            Log.w("MusicPlaybackService", "Error stopping foreground on destroy", e)
         }
         super.onDestroy()
     }
 
     companion object {
         const val CHANNEL_ID = "playback_channel_id"
+        const val NOTIFICATION_ID = 1001
     }
 }

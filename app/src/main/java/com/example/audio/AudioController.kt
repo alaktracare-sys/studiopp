@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -16,11 +17,15 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import android.os.Handler
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.video.VideoRendererEventListener
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.request.ImageRequest
@@ -93,33 +98,8 @@ data class PlaybackState(
 @OptIn(UnstableApi::class)
 @SuppressLint("StaticFieldLeak")
 class AudioController private constructor(private val context: Context) {
-    val player: ExoPlayer = run {
-        val audioAttributes = AudioAttributes.Builder()
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .setUsage(C.USAGE_MEDIA)
-            .build()
+    val player: ExoPlayer by lazy { createPlayer() }
 
-        val renderersFactory = DefaultRenderersFactory(context)
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
-
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                30_000,   // minBufferMs (30s)
-                120_000,  // maxBufferMs (2min)
-                2_500,    // bufferForPlaybackMs
-                5_000     // bufferForPlaybackAfterRebufferMs
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
-
-        ExoPlayer.Builder(context, renderersFactory)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setLoadControl(loadControl)
-            .build()
-    }
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -129,7 +109,74 @@ class AudioController private constructor(private val context: Context) {
     private var progressJob: Job? = null
 
     init {
-        player.addListener(object : Player.Listener {
+        // Deferred initialization: ExoPlayer is created lazily when playback is requested
+    }
+
+    private fun createPlayer(): ExoPlayer {
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
+
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildVideoRenderers(
+                context: Context,
+                extensionRendererMode: Int,
+                mediaCodecSelector: MediaCodecSelector,
+                enableDecoderFallback: Boolean,
+                eventHandler: Handler,
+                eventListener: VideoRendererEventListener,
+                allowedVideoJoiningTimeMs: Long,
+                out: ArrayList<Renderer>
+            ) {
+                // Audio-only player: skip video codecs to prevent C2 system resource errors
+            }
+
+            override fun buildCameraMotionRenderers(
+                context: Context,
+                extensionRendererMode: Int,
+                out: ArrayList<Renderer>
+            ) {
+                // Audio-only player: skip camera motion renderers
+            }
+
+            override fun buildImageRenderers(
+                out: ArrayList<Renderer>
+            ) {
+                // Audio-only player: skip image renderers
+            }
+
+            override fun buildMiscellaneousRenderers(
+                context: Context,
+                eventHandler: Handler,
+                extensionRendererMode: Int,
+                out: ArrayList<Renderer>
+            ) {
+                // Audio-only player: skip misc renderers
+            }
+        }.apply {
+            setEnableDecoderFallback(false)
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+        }
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        val exo = ExoPlayer.Builder(context, renderersFactory)
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setLoadControl(loadControl)
+            .build()
+
+        exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playbackState.value = _playbackState.value.copy(isPlaying = isPlaying)
                 if (isPlaying) {
@@ -141,7 +188,7 @@ class AudioController private constructor(private val context: Context) {
 
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
-                    val dur = player.duration.coerceAtLeast(0L)
+                    val dur = exo.duration.coerceAtLeast(0L)
                     _playbackState.value = _playbackState.value.copy(durationMs = dur)
                 } else if (state == Player.STATE_ENDED) {
                     handleTrackEnded()
@@ -163,6 +210,8 @@ class AudioController private constructor(private val context: Context) {
                 }
             }
         })
+
+        return exo
     }
 
     private fun startProgressTracker() {
@@ -357,9 +406,9 @@ class AudioController private constructor(private val context: Context) {
     fun ensureServiceStarted() {
         try {
             val serviceIntent = Intent(context, MusicPlaybackService::class.java)
-            ContextCompat.startForegroundService(context, serviceIntent)
+            context.startService(serviceIntent)
         } catch (e: Exception) {
-            Log.w("AudioController", "Could not start playback service: ${e.message}")
+            Log.w("AudioController", "Could not start playback service", e)
         }
     }
 

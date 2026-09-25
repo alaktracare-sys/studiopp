@@ -5,15 +5,19 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.example.model.Song
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class AppDatabase private constructor(context: Context) :
     SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION), SongDao {
 
+    private val dbScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val _downloadedSongsFlow = MutableStateFlow<List<DownloadedSongEntity>>(emptyList())
     private val _listeningHistoryFlow = MutableStateFlow<List<ListeningHistoryEntity>>(emptyList())
 
@@ -77,12 +81,14 @@ class AppDatabase private constructor(context: Context) :
     fun songDao(): SongDao = this
 
     private fun refreshFlow() {
-        try {
-            val songs = queryAllDownloadedSongs()
-            _downloadedSongsFlow.value = songs
-            val history = queryAllHistory()
-            _listeningHistoryFlow.value = history
-        } catch (_: Exception) {}
+        dbScope.launch {
+            try {
+                val songs = queryAllDownloadedSongs()
+                _downloadedSongsFlow.value = songs
+                val history = queryAllHistory()
+                _listeningHistoryFlow.value = history
+            } catch (_: Exception) {}
+        }
     }
 
     private fun queryAllHistory(): List<ListeningHistoryEntity> {
