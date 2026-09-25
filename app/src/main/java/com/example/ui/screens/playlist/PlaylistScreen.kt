@@ -1,6 +1,7 @@
 package com.example.ui.screens.playlist
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import com.example.audio.AudioController
 import com.example.audio.ContextType
 import com.example.audio.PlaybackContext
 import com.example.data.repository.MusicRepository
+import com.example.model.Playlist
 import com.example.model.Song
 import com.example.ui.components.SongItemRow
 import com.example.ui.components.SongMenuBottomSheet
@@ -49,12 +51,21 @@ fun PlaylistScreen(
     var selectedSongForMenu by remember { mutableStateOf<Song?>(null) }
     val scope = rememberCoroutineScope()
 
+    val isDownloadedPlaylist = playlistId == Playlist.ID_DOWNLOADED || playlistId == -2 || playlistName.contains("Download", ignoreCase = true)
+    val isLikedPlaylist = playlistId == Playlist.ID_LIKED || playlistId == -1 || playlistName.contains("Liked", ignoreCase = true)
+
     val playbackState by audioController.playbackState.collectAsState()
     val downloadProgress by repository.downloadManager.downloadProgress.collectAsState()
+    val liveDownloadedSongs by repository.downloadedSongsFlow.collectAsState(initial = emptyList())
+
+    val displaySongs = if (isDownloadedPlaylist) liveDownloadedSongs else songs
 
     LaunchedEffect(playlistId) {
-        songs = if (playlistId == -1) {
+        isLoading = true
+        songs = if (isLikedPlaylist) {
             repository.getLikedSongs()
+        } else if (isDownloadedPlaylist) {
+            repository.getDownloadedSongs()
         } else {
             repository.getPlaylistSongs(playlistId)
         }
@@ -86,7 +97,11 @@ fun PlaylistScreen(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    if (playlistId == -1) Color(0xFF6366F1).copy(alpha = 0.5f) else AlaktraMint.copy(alpha = 0.35f),
+                                    when {
+                                        isLikedPlaylist -> Color(0xFF6366F1).copy(alpha = 0.5f)
+                                        isDownloadedPlaylist -> Color(0xFF0D9488).copy(alpha = 0.5f)
+                                        else -> AlaktraMint.copy(alpha = 0.35f)
+                                    },
                                     AlaktraSurface,
                                     AlaktraBackground
                                 )
@@ -120,17 +135,24 @@ fun PlaylistScreen(
                                 .size(72.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
-                                    if (playlistId == -1) {
-                                        Brush.linearGradient(listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint))
-                                    } else {
-                                        Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan))
+                                    when {
+                                        isLikedPlaylist -> Brush.linearGradient(listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint))
+                                        isDownloadedPlaylist -> Brush.linearGradient(listOf(Color(0xFF0F766E), Color(0xFF14B8A6), AlaktraMint))
+                                        else -> Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan))
                                     }
                                 )
                         ) {
                             Icon(
-                                imageVector = if (playlistId == -1) Icons.Default.Favorite else Icons.Default.QueueMusic,
+                                imageVector = when {
+                                    isLikedPlaylist -> Icons.Default.Favorite
+                                    isDownloadedPlaylist -> Icons.Default.DownloadDone
+                                    else -> Icons.Default.QueueMusic
+                                },
                                 contentDescription = null,
-                                tint = if (playlistId == -1) Color.White else Color(0xFF041C12),
+                                tint = when {
+                                    isLikedPlaylist || isDownloadedPlaylist -> Color.White
+                                    else -> Color(0xFF041C12)
+                                },
                                 modifier = Modifier.size(36.dp)
                             )
                         }
@@ -148,7 +170,11 @@ fun PlaylistScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${songs.size} tracks • Alaktra Collection",
+                                text = when {
+                                    isDownloadedPlaylist -> "${displaySongs.size} tracks • Offline Music"
+                                    isLikedPlaylist -> "${displaySongs.size} tracks • Favorites Collection"
+                                    else -> "${displaySongs.size} tracks • Alaktra Collection"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = AlaktraTextSecondary
                             )
@@ -170,41 +196,67 @@ fun PlaylistScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Download all button
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    songs.forEach { song ->
-                                        if (!song.isDownloaded) {
-                                            repository.downloadManager.downloadSong(song)
+                        if (isDownloadedPlaylist) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color(0xFF0F766E).copy(alpha = 0.25f),
+                                border = BorderStroke(1.dp, Color(0xFF14B8A6).copy(alpha = 0.5f))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.OfflinePin,
+                                        contentDescription = null,
+                                        tint = AlaktraMint,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Offline Ready",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = AlaktraMint
+                                    )
+                                }
+                            }
+                        } else {
+                            // Download all button
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        songs.forEach { song ->
+                                            if (!song.isDownloaded) {
+                                                repository.downloadManager.downloadSong(song)
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(AlaktraSurface)
-                                .border(1.dp, AlaktraBorder, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DownloadForOffline,
-                                contentDescription = "Download All",
-                                tint = AlaktraMint,
-                                modifier = Modifier.size(24.dp)
-                            )
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(AlaktraSurface)
+                                    .border(1.dp, AlaktraBorder, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DownloadForOffline,
+                                    contentDescription = "Download All",
+                                    tint = AlaktraMint,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
 
                         // Shuffle play button
                         IconButton(
                             onClick = {
-                                if (songs.isNotEmpty()) {
+                                if (displaySongs.isNotEmpty()) {
                                     val ctx = PlaybackContext(
                                         uri = "alaktra:playlist:$playlistId",
                                         type = ContextType.PLAYLIST,
                                         name = playlistName,
-                                        trackIds = songs.map { it.id },
-                                        tracks = songs
+                                        trackIds = displaySongs.map { it.id },
+                                        tracks = displaySongs
                                     )
                                     audioController.playContext(ctx, startIndex = 0, autoShuffle = true)
                                 }
@@ -232,13 +284,13 @@ fun PlaylistScreen(
                             .clip(CircleShape)
                             .background(Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan)))
                             .clickable {
-                                if (songs.isNotEmpty()) {
+                                if (displaySongs.isNotEmpty()) {
                                     val ctx = PlaybackContext(
                                         uri = "alaktra:playlist:$playlistId",
                                         type = ContextType.PLAYLIST,
                                         name = playlistName,
-                                        trackIds = songs.map { it.id },
-                                        tracks = songs
+                                        trackIds = displaySongs.map { it.id },
+                                        tracks = displaySongs
                                     )
                                     audioController.playContext(ctx, startIndex = 0, autoShuffle = false)
                                 }
@@ -254,8 +306,8 @@ fun PlaylistScreen(
                 }
             }
 
-            // Add Song Row (if not Liked Songs system playlist)
-            if (playlistId != -1) {
+            // Add Song Row (if not Liked Songs or Downloaded Songs auto playlist)
+            if (!isLikedPlaylist && !isDownloadedPlaylist) {
                 item {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -291,7 +343,7 @@ fun PlaylistScreen(
                 }
             }
 
-            if (isLoading) {
+            if (isLoading && displaySongs.isEmpty()) {
                 item {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -302,7 +354,7 @@ fun PlaylistScreen(
                         CircularProgressIndicator(color = AlaktraMint)
                     }
                 }
-            } else if (songs.isEmpty()) {
+            } else if (displaySongs.isEmpty()) {
                 item {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -312,20 +364,32 @@ fun PlaylistScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
-                                imageVector = Icons.Default.MusicOff,
+                                imageVector = when {
+                                    isDownloadedPlaylist -> Icons.Default.CloudDownload
+                                    isLikedPlaylist -> Icons.Default.FavoriteBorder
+                                    else -> Icons.Default.MusicOff
+                                },
                                 contentDescription = null,
                                 tint = AlaktraTextMuted,
                                 modifier = Modifier.size(48.dp)
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Playlist is empty",
+                                text = when {
+                                    isDownloadedPlaylist -> "No downloaded songs yet"
+                                    isLikedPlaylist -> "No liked songs yet"
+                                    else -> "Playlist is empty"
+                                },
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = AlaktraTextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (playlistId == -1) "Tap the heart icon on any song to add it here." else "Add tracks from your server library.",
+                                text = when {
+                                    isDownloadedPlaylist -> "Download any track from any playlist or search to listen offline without internet."
+                                    isLikedPlaylist -> "Tap the heart icon on any song to add it here."
+                                    else -> "Add tracks from your server library."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = AlaktraTextSecondary,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -334,7 +398,7 @@ fun PlaylistScreen(
                     }
                 }
             } else {
-                itemsIndexed(songs) { index, song ->
+                itemsIndexed(displaySongs) { index, song ->
                     val isCurrent = playbackState.currentSong?.id == song.id
                     SongItemRow(
                         song = song,
@@ -345,8 +409,8 @@ fun PlaylistScreen(
                                 uri = "alaktra:playlist:$playlistId",
                                 type = ContextType.PLAYLIST,
                                 name = playlistName,
-                                trackIds = songs.map { it.id },
-                                tracks = songs
+                                trackIds = displaySongs.map { it.id },
+                                tracks = displaySongs
                             )
                             audioController.playContext(ctx, startIndex = index, autoShuffle = false)
                         },

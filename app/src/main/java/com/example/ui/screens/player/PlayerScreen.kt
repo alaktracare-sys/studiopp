@@ -205,7 +205,7 @@ fun PlayerScreen(
                         color = Color.White.copy(alpha = 0.7f)
                     )
                     Text(
-                        text = if (song.isLiked) "Liked Songs" else "Alaktra Stream",
+                        text = playbackState.playbackSource.ifBlank { if (song.isLiked) "Liked Songs" else "Alaktra Stream" },
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = topHeaderFontSize

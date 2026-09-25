@@ -167,6 +167,10 @@ class AppDatabase private constructor(context: Context) :
 
     override fun getAllDownloadedSongs(): Flow<List<DownloadedSongEntity>> = _downloadedSongsFlow.asStateFlow()
 
+    override suspend fun getDownloadedSongsList(): List<DownloadedSongEntity> = withContext(Dispatchers.IO) {
+        queryAllDownloadedSongs()
+    }
+
     override suspend fun getDownloadedSong(songId: Int): DownloadedSongEntity? = withContext(Dispatchers.IO) {
         val db = readableDatabase
         val cursor = db.query(

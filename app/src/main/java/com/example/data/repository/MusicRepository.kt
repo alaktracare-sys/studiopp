@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 
 import com.example.data.local.ListeningHistoryEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class MusicRepository(private val context: Context) {
     val authPreferences = AuthPreferences(context)
@@ -30,6 +31,12 @@ class MusicRepository(private val context: Context) {
     private val appDatabase = AppDatabase.getInstance(context)
     private val songDao = appDatabase.songDao()
     val listeningHistory: Flow<List<ListeningHistoryEntity>> = appDatabase.getAllHistory()
+    val downloadedSongsFlow: Flow<List<Song>> = songDao.getAllDownloadedSongs().map { list ->
+        val likedIds = authPreferences.getLikedSongIds()
+        list.map { entity ->
+            entity.toSong().copy(isLiked = likedIds.contains(entity.songId))
+        }
+    }
 
     suspend fun recordSongPlayed(song: Song) {
         appDatabase.insertListeningHistory(
@@ -437,7 +444,11 @@ class MusicRepository(private val context: Context) {
         val likedIds = authPreferences.getLikedSongIds()
         val userId = getEffectiveUserId()
 
-        val actualPlaylistId = if (playlistId == -1) {
+        if (playlistId == Playlist.ID_DOWNLOADED || playlistId == -2) {
+            return@withContext getDownloadedSongs()
+        }
+
+        val actualPlaylistId = if (playlistId == Playlist.ID_LIKED || playlistId == -1) {
             getOrFetchLikedPlaylistId(userId) ?: return@withContext emptyList()
         } else {
             playlistId
@@ -497,7 +508,15 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun getLikedSongs(): List<Song> = withContext(Dispatchers.IO) {
-        getPlaylistSongs(-1)
+        getPlaylistSongs(Playlist.ID_LIKED)
+    }
+
+    suspend fun getDownloadedSongs(): List<Song> = withContext(Dispatchers.IO) {
+        val likedIds = authPreferences.getLikedSongIds()
+        val entities = songDao.getDownloadedSongsList()
+        entities.map { entity ->
+            entity.toSong().copy(isLiked = likedIds.contains(entity.songId))
+        }
     }
 
     private suspend fun attachLocalPaths(songs: List<Song>): List<Song> {

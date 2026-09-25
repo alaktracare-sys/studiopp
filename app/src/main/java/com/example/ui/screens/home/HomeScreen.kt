@@ -1,6 +1,7 @@
 package com.example.ui.screens.home
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,7 +47,8 @@ fun HomeScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToPlaylistSelect: (Song) -> Unit,
     onNavigateToPlaylist: (Int, String) -> Unit = { _, _ -> },
-    onNavigateToLikedSongs: () -> Unit = {}
+    onNavigateToLikedSongs: () -> Unit = {},
+    onNavigateToDownloadedSongs: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -234,6 +236,98 @@ fun HomeScreen(
                     }
                 }
             } else {
+                // Permanent System Playlists Shortcuts (Liked & Downloaded)
+                item {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = horizontalPad, vertical = 6.dp)
+                    ) {
+                        Surface(
+                            onClick = onNavigateToLikedSongs,
+                            shape = RoundedCornerShape(10.dp),
+                            color = AlaktraSurface,
+                            border = BorderStroke(1.dp, AlaktraBorder),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(Color(0xFF4F46E5), Color(0xFF06B6D4))
+                                            )
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Liked Songs",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Liked Songs",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = AlaktraTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = onNavigateToDownloadedSongs,
+                            shape = RoundedCornerShape(10.dp),
+                            color = AlaktraSurface,
+                            border = BorderStroke(1.dp, AlaktraBorder),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(Color(0xFF0F766E), Color(0xFF14B8A6))
+                                            )
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DownloadDone,
+                                        contentDescription = "Downloaded Songs",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Downloaded",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = AlaktraTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Quick Access Adaptive Grid
                 item {
                     BoxWithConstraints(

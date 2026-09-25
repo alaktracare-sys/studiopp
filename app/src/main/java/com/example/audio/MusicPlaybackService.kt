@@ -10,15 +10,18 @@ import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.MainActivity
+import com.example.R
 
 class MusicPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
+    private var forwardingPlayer: ForwardingPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -39,13 +42,12 @@ class MusicPlaybackService : MediaSessionService() {
         // 1. Create notification channel for Android O+
         createNotificationChannel()
 
-        // 2. Configure media notification provider
+        // 2. Configure media notification provider with playback icon
         try {
-            setMediaNotificationProvider(
-                DefaultMediaNotificationProvider.Builder(this)
-                    .setChannelId(CHANNEL_ID)
-                    .build()
-            )
+            val provider = DefaultMediaNotificationProvider.Builder(this)
+                .setChannelId(CHANNEL_ID)
+                .build()
+            setMediaNotificationProvider(provider)
         } catch (e: Exception) {
             Log.w("MusicPlaybackService", "Failed to set custom notification provider", e)
         }
@@ -53,8 +55,66 @@ class MusicPlaybackService : MediaSessionService() {
 
     private fun initializeSessionIfNeeded() {
         if (mediaSession != null) return
-        val player = AudioController.getInstance(applicationContext).player
+        val audioController = AudioController.getInstance(applicationContext)
+        val player = audioController.player
         player.addListener(playerListener)
+
+        val forwarding = object : ForwardingPlayer(player) {
+            override fun seekToNext() {
+                audioController.next()
+            }
+
+            override fun seekToNextMediaItem() {
+                audioController.next()
+            }
+
+            override fun seekToPrevious() {
+                audioController.previous()
+            }
+
+            override fun seekToPreviousMediaItem() {
+                audioController.previous()
+            }
+
+            override fun hasNextMediaItem(): Boolean {
+                val state = audioController.playbackState.value
+                return state.userQueue.isNotEmpty() ||
+                        (state.contextIndex + 1 < state.contextOrder.size) ||
+                        (state.repeat == RepeatMode.CONTEXT && state.contextOrder.isNotEmpty()) ||
+                        state.autoplayTracks.isNotEmpty()
+            }
+
+            override fun hasPreviousMediaItem(): Boolean {
+                val state = audioController.playbackState.value
+                return state.history.isNotEmpty() || state.contextIndex > 0 || (state.currentPositionMs / 1000 > 3)
+            }
+
+            override fun getAvailableCommands(): Player.Commands {
+                return super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                    .add(Player.COMMAND_STOP)
+                    .build()
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean {
+                return when (command) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                    Player.COMMAND_PLAY_PAUSE,
+                    Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                    Player.COMMAND_STOP -> true
+                    else -> super.isCommandAvailable(command)
+                }
+            }
+        }
+        forwardingPlayer = forwarding
 
         val sessionActivityPendingIntent = PendingIntent.getActivity(
             this,
@@ -64,7 +124,7 @@ class MusicPlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val session = MediaSession.Builder(this, player)
+        val session = MediaSession.Builder(this, forwarding)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
         mediaSession = session
@@ -91,8 +151,10 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) {
+            initializeSessionIfNeeded()
+        }
         super.onStartCommand(intent, flags, startId)
-        initializeSessionIfNeeded()
         return START_STICKY
     }
 
@@ -101,7 +163,12 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        initializeSessionIfNeeded()
+        if (mediaSession == null) {
+            val audioController = AudioController.getInstance(applicationContext)
+            if (audioController.playbackState.value.currentSong != null) {
+                initializeSessionIfNeeded()
+            }
+        }
         return mediaSession
     }
 

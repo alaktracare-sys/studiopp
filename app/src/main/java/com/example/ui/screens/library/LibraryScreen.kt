@@ -31,10 +31,11 @@ import kotlinx.coroutines.launch
 fun LibraryScreen(
     repository: MusicRepository,
     onNavigateToPlaylist: (Int, String) -> Unit,
-    onNavigateToLikedSongs: () -> Unit
+    onNavigateToLikedSongs: () -> Unit,
+    onNavigateToDownloadedSongs: () -> Unit
 ) {
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
-    var downloadedSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    val downloadedSongs by repository.downloadedSongsFlow.collectAsState(initial = emptyList())
     var likedSongsCount by remember { mutableIntStateOf(0) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToEdit by remember { mutableStateOf<Playlist?>(null) }
@@ -44,8 +45,6 @@ fun LibraryScreen(
     LaunchedEffect(Unit) {
         playlists = repository.getPlaylists()
         likedSongsCount = repository.authPreferences.getLikedSongIds().size
-        val allSongs = repository.getSongs()
-        downloadedSongs = allSongs.filter { it.isDownloaded || it.localPath != null }
     }
 
     Scaffold(
@@ -160,49 +159,56 @@ fun LibraryScreen(
                     }
                 }
 
-                // Downloaded Card (if downloaded songs exist)
-                if (downloadedSongs.isNotEmpty()) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                // Permanent Downloaded Songs / Offline Music Card
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onNavigateToDownloadedSongs)
+                            .padding(horizontal = 20.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onNavigateToLikedSongs)
-                                .padding(horizontal = 20.dp, vertical = 8.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFF0D9488), Color(0xFF065F46))
-                                        )
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF0F766E), Color(0xFF14B8A6), AlaktraMint)
                                     )
-                            ) {
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DownloadDone,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Downloaded Songs",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = AlaktraTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.DownloadDone,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    imageVector = Icons.Default.OfflinePin,
+                                    contentDescription = "Offline ready",
+                                    tint = AlaktraMint,
+                                    modifier = Modifier.size(14.dp)
                                 )
-                            }
-
-                            Spacer(modifier = Modifier.width(16.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Downloaded Music",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    ),
-                                    color = AlaktraTextPrimary
-                                )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = "Offline ready • ${downloadedSongs.size} tracks",
+                                    text = "Permanent offline playlist • ${downloadedSongs.size} tracks",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = AlaktraTextSecondary
                                 )

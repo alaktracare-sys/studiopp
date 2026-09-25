@@ -960,11 +960,30 @@ class AudioController private constructor(private val context: Context) {
                     val secondaryRgb = palette.getDarkMutedColor(
                         palette.getMutedColor(0xFF1B0B10.toInt())
                     )
+                    val stream = java.io.ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+                    val artworkBytes = stream.toByteArray()
+
                     withContext(Dispatchers.Main) {
                         _playbackState.value = _playbackState.value.copy(
                             dominantColor = Color(dominantRgb),
                             secondaryColor = Color(secondaryRgb)
                         )
+                        try {
+                            val currentItem = player.currentMediaItem
+                            if (currentItem != null) {
+                                val currentMetadata = currentItem.mediaMetadata
+                                val updatedMetadata = currentMetadata.buildUpon()
+                                    .setArtworkData(artworkBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                                    .build()
+                                val updatedItem = currentItem.buildUpon()
+                                    .setMediaMetadata(updatedMetadata)
+                                    .build()
+                                player.replaceMediaItem(player.currentMediaItemIndex, updatedItem)
+                            }
+                        } catch (e: Exception) {
+                            Log.w("AudioController", "Could not update media item artwork", e)
+                        }
                     }
                 }
             } catch (_: Exception) {}

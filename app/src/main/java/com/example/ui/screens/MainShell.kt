@@ -61,6 +61,8 @@ fun MainShell(
     val context = LocalContext.current
     var currentTab by remember { mutableIntStateOf(0) }
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
+    var playlistOriginScreen by remember { mutableStateOf(Screen.HOME) }
+    var playlistOriginTab by remember { mutableIntStateOf(0) }
     var activePlaylistId by remember { mutableIntStateOf(1) }
     var activePlaylistName by remember { mutableStateOf("Playlist") }
     var showFullPlayer by remember { mutableStateOf(false) }
@@ -72,13 +74,21 @@ fun MainShell(
 
     val playbackState by audioController.playbackState.collectAsState()
 
+    val navigateBackFromPlaylist: () -> Unit = {
+        currentScreen = playlistOriginScreen
+        currentTab = playlistOriginTab
+    }
+
     // Back handling
     BackHandler(enabled = showFullPlayer || currentScreen != Screen.HOME || currentTab != 0) {
         when {
             showFullPlayer -> showFullPlayer = false
             currentScreen == Screen.ADD_SONGS -> currentScreen = Screen.PLAYLIST
-            currentScreen == Screen.PLAYLIST -> currentScreen = Screen.LIBRARY
-            currentScreen == Screen.PROFILE -> currentScreen = Screen.HOME
+            currentScreen == Screen.PLAYLIST -> navigateBackFromPlaylist()
+            currentScreen == Screen.PROFILE -> {
+                currentScreen = Screen.HOME
+                currentTab = 0
+            }
             currentTab != 0 -> {
                 currentTab = 0
                 currentScreen = Screen.HOME
@@ -87,6 +97,10 @@ fun MainShell(
     }
 
     fun openPlaylist(id: Int, name: String) {
+        if (currentScreen != Screen.PLAYLIST && currentScreen != Screen.ADD_SONGS) {
+            playlistOriginScreen = currentScreen
+            playlistOriginTab = currentTab
+        }
         activePlaylistId = id
         activePlaylistName = name
         currentScreen = Screen.PLAYLIST
@@ -340,7 +354,10 @@ fun MainShell(
                                     availablePlaylists = repository.getPlaylists()
                                     songForPlaylistSelection = song
                                 }
-                            }
+                            },
+                            onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
+                            onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
+                            onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
                         )
                     }
 
@@ -361,7 +378,8 @@ fun MainShell(
                         LibraryScreen(
                             repository = repository,
                             onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
-                            onNavigateToLikedSongs = { openPlaylist(-1, "Liked Songs") }
+                            onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
+                            onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
                         )
                     }
 
@@ -371,7 +389,7 @@ fun MainShell(
                             playlistName = activePlaylistName,
                             repository = repository,
                             audioController = audioController,
-                            onBack = { currentScreen = Screen.LIBRARY },
+                            onBack = navigateBackFromPlaylist,
                             onNavigateToAddSongs = { currentScreen = Screen.ADD_SONGS }
                         )
                     }
@@ -388,7 +406,10 @@ fun MainShell(
                         ProfileScreen(
                             repository = repository,
                             audioController = audioController,
-                            onBack = { currentScreen = Screen.HOME },
+                            onBack = {
+                                currentScreen = Screen.HOME
+                                currentTab = 0
+                            },
                             onLogout = onLogout
                         )
                     }

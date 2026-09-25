@@ -19,8 +19,14 @@ data class Playlist(
     val name: String,
     val description: String = "",
     val songCount: Int = 0,
-    val isLikedPlaylist: Boolean = false
-)
+    val isLikedPlaylist: Boolean = false,
+    val isDownloadedPlaylist: Boolean = false
+) {
+    companion object {
+        const val ID_LIKED = -1
+        const val ID_DOWNLOADED = -2
+    }
+}
 
 data class User(
     val id: Int,
