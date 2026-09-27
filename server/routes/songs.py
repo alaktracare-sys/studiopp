@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, Query, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from database import get_db, MUSIC_DIR, COVER_DIR
 import uuid
 import os
@@ -39,7 +39,13 @@ def get_songs(request: Request):
     songs = db.execute("SELECT * FROM songs ORDER BY id DESC").fetchall()
     base_url = get_base_url(request)
 
-    return [
+    latest_token = f"{len(songs)}_{songs[0]['id'] if songs else 0}"
+    etag = f'"{hashlib.md5(latest_token.encode()).hexdigest()}"'
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip('"') == etag.strip('"'):
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
+
+    data = [
         {
             "id": s["id"],
             "title": s["title"],
@@ -50,6 +56,7 @@ def get_songs(request: Request):
         }
         for s in songs
     ]
+    return JSONResponse(content=data, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
 
 
 # 🎵 STREAM SONG AUDIO (Full Range Support for Android ExoPlayer)
@@ -120,6 +127,16 @@ def stream_song(song_id: int, request: Request):
             parts = bytes_range.split("-")
             start_str, end_str = parts[0].strip(), parts[1].strip()
 
+            if start_str and int(start_str) >= file_size:
+                return StreamingResponse(
+                    iter([]),
+                    status_code=416,
+                    headers={
+                        "Content-Range": f"bytes */{file_size}",
+                        "Accept-Ranges": "bytes",
+                    }
+                )
+
             if start_str and end_str:
                 start = int(start_str)
                 end = min(int(end_str), file_size - 1)
@@ -165,7 +182,7 @@ def stream_song(song_id: int, request: Request):
         "ETag": etag,
     }
     return StreamingResponse(
-        open(file_path, "rb"),
+        iterfile(0, file_size - 1) if file_size > 0 else iter([]),
         media_type=content_type,
         headers=headers,
     )
@@ -233,7 +250,8 @@ def search_songs(
     offset: int = Query(0, ge=0),
 ):
     db = get_db()
-    query = f"%{q.strip()}%"
+    clean_q = q.strip()
+    query = f"%{clean_q}%"
 
     songs = db.execute(
         """
@@ -248,7 +266,13 @@ def search_songs(
 
     base_url = get_base_url(request)
 
-    return [
+    query_sig = f"{clean_q}_{limit}_{offset}_{len(songs)}_{songs[0]['id'] if songs else 0}"
+    etag = f'"{hashlib.md5(query_sig.encode()).hexdigest()}"'
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip('"') == etag.strip('"'):
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
+
+    data = [
         {
             "id": s["id"],
             "title": s["title"],
@@ -259,3 +283,4 @@ def search_songs(
         }
         for s in songs
     ]
+    return JSONResponse(content=data, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})

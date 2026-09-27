@@ -1,5 +1,6 @@
 package com.example.ui.screens.profile
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.AudioCache
 import com.example.audio.AudioController
 import com.example.data.repository.MusicRepository
 import com.example.ui.theme.*
@@ -38,7 +40,7 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val user = remember { repository.authPreferences.getUser() }
+    var user by remember { mutableStateOf(repository.authPreferences.getUser()) }
     val likedCount = remember { repository.authPreferences.getLikedSongIds().size }
 
     var serverUrl by remember { mutableStateOf(repository.authPreferences.getServerBaseUrl()) }
@@ -47,6 +49,10 @@ fun ProfileScreen(
     var isCheckingConnection by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var downloadedCount by remember { mutableIntStateOf(0) }
+    var audioCacheBytes by remember { mutableLongStateOf(AudioCache.getCacheSizeBytes(context)) }
+    var imageAndHttpCacheBytes by remember {
+        mutableLongStateOf(AudioCache.getImageCacheSizeBytes(context) + AudioCache.getHttpCacheSizeBytes(context))
+    }
 
     // Listening history state
     var showHistoryPanel by remember { mutableStateOf(false) }
@@ -54,14 +60,15 @@ fun ProfileScreen(
 
     // Check connection on entry & load download count & seed history if empty
     LaunchedEffect(Unit) {
+        val cachedUser = repository.getCachedUser()
+        if (cachedUser != null) {
+            user = cachedUser
+        }
         isCheckingConnection = true
         isConnected = repository.testConnection()
         isCheckingConnection = false
         val songs = repository.getSongs()
         downloadedCount = songs.count { it.isDownloaded || it.localPath != null }
-        if (songs.isNotEmpty()) {
-            repository.seedHistoryIfEmpty(songs)
-        }
     }
 
     Scaffold(
@@ -305,6 +312,129 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Storage & Caching Management Card (Modern Music App Standard)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = AlaktraCard),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(AlaktraBorder, AlaktraBorder)))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Storage & Caching",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = AlaktraTextPrimary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Storage,
+                            contentDescription = null,
+                            tint = AlaktraMint,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Row 1: Streaming Audio Cache
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Streaming Audio Cache",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = AlaktraTextPrimary
+                            )
+                            val mb = audioCacheBytes / (1024f * 1024f)
+                            Text(
+                                text = String.format("%.1f MB / 512 MB (LRU)", mb),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AlaktraTextSecondary
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                AudioCache.clearCache(context)
+                                audioCacheBytes = AudioCache.getCacheSizeBytes(context)
+                                Toast.makeText(context, "Streaming audio cache cleared", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text("Clear", color = AlaktraMint, fontSize = 13.sp)
+                        }
+                    }
+
+                    Divider(modifier = Modifier.padding(vertical = 8.dp), color = AlaktraBorder)
+
+                    // Row 2: Artwork & API Response Cache
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Artwork & Network Cache",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = AlaktraTextPrimary
+                            )
+                            val mb = imageAndHttpCacheBytes / (1024f * 1024f)
+                            Text(
+                                text = String.format("%.1f MB (Coil & OkHttp)", mb),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AlaktraTextSecondary
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                AudioCache.clearArtworkAndHttpCache(context)
+                                repository.apiCacheManager.clearAll()
+                                imageAndHttpCacheBytes = AudioCache.getImageCacheSizeBytes(context) + AudioCache.getHttpCacheSizeBytes(context)
+                                Toast.makeText(context, "Temporary artwork and API cache cleared", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text("Clear", color = AlaktraMint, fontSize = 13.sp)
+                        }
+                    }
+
+                    Divider(modifier = Modifier.padding(vertical = 8.dp), color = AlaktraBorder)
+
+                    // Row 3: Offline Downloads
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Permanent Offline Downloads",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = AlaktraTextPrimary
+                            )
+                            Text(
+                                text = "$downloadedCount songs stored in app storage",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AlaktraTextSecondary
+                            )
+                        }
+                        Text(
+                            text = "Protected",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = AlaktraCyan,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // App Details Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -370,9 +500,11 @@ fun ProfileScreen(
                 Button(
                     onClick = {
                         showLogoutConfirm = false
-                        repository.authPreferences.clear()
-                        audioController.resetForLogout()
-                        onLogout()
+                        scope.launch {
+                            repository.clearUserData()
+                            audioController.resetForLogout()
+                            onLogout()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White)
                 ) {

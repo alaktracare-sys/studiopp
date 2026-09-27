@@ -51,6 +51,8 @@ fun HomeScreen(
     onNavigateToDownloadedSongs: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val isOnline by remember { com.example.util.NetworkMonitor.observeNetwork(context) }
+        .collectAsState(initial = com.example.util.NetworkMonitor.isOnline(context))
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -72,9 +74,29 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        songs = repository.getSongs()
-        playlists = repository.getPlaylists()
-        isLoading = false
+        val initialCached = repository.getCachedSongs()
+        if (initialCached.isNotEmpty()) {
+            songs = initialCached
+            isLoading = false
+        }
+        val initialPlaylists = repository.getCachedPlaylists()
+        if (initialPlaylists.isNotEmpty()) {
+            playlists = initialPlaylists
+        }
+
+        scope.launch {
+            val freshSongs = repository.getSongs()
+            if (freshSongs.isNotEmpty()) {
+                songs = freshSongs
+            }
+            isLoading = false
+        }
+        scope.launch {
+            val freshPlaylists = repository.getPlaylists()
+            if (freshPlaylists.isNotEmpty()) {
+                playlists = freshPlaylists
+            }
+        }
     }
 
     val windowSize = rememberWindowSizeInfo()
@@ -238,91 +260,96 @@ fun HomeScreen(
             } else {
                 // Permanent System Playlists Shortcuts (Liked & Downloaded)
                 item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = horizontalPad, vertical = 6.dp)
                     ) {
-                        Surface(
-                            onClick = onNavigateToLikedSongs,
-                            shape = RoundedCornerShape(10.dp),
-                            color = AlaktraSurface,
-                            border = BorderStroke(1.dp, AlaktraBorder),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxSize()
+                            Surface(
+                                onClick = onNavigateToLikedSongs,
+                                shape = RoundedCornerShape(10.dp),
+                                color = AlaktraSurface,
+                                border = BorderStroke(1.dp, AlaktraBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(Color(0xFF4F46E5), Color(0xFF06B6D4))
-                                            )
-                                        )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxSize()
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Favorite,
-                                        contentDescription = "Liked Songs",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(Color(0xFF4F46E5), Color(0xFF06B6D4))
+                                                )
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = "Liked Songs",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Liked Songs",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = AlaktraTextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Liked Songs",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = AlaktraTextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
-                        }
 
-                        Surface(
-                            onClick = onNavigateToDownloadedSongs,
-                            shape = RoundedCornerShape(10.dp),
-                            color = AlaktraSurface,
-                            border = BorderStroke(1.dp, AlaktraBorder),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxSize()
+                            Surface(
+                                onClick = onNavigateToDownloadedSongs,
+                                shape = RoundedCornerShape(10.dp),
+                                color = AlaktraSurface,
+                                border = BorderStroke(1.dp, AlaktraBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(Color(0xFF0F766E), Color(0xFF14B8A6))
-                                            )
-                                        )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxSize()
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DownloadDone,
-                                        contentDescription = "Downloaded Songs",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(Color(0xFF0F766E), Color(0xFF14B8A6))
+                                                )
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DownloadDone,
+                                            contentDescription = "Downloaded Songs",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Downloaded",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = AlaktraTextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Downloaded",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = AlaktraTextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
                         }
                     }

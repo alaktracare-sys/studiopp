@@ -43,8 +43,16 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        playlists = repository.getPlaylists()
+        val cached = repository.getCachedPlaylists()
+        if (cached.isNotEmpty()) {
+            playlists = cached
+        }
         likedSongsCount = repository.authPreferences.getLikedSongIds().size
+
+        val fresh = repository.getPlaylists()
+        if (fresh.isNotEmpty()) {
+            playlists = fresh
+        }
     }
 
     Scaffold(

@@ -10,6 +10,7 @@ data class ListeningHistoryEntity(
     val audioUrl: String,
     val coverUrl: String,
     val duration: Double,
+    val listenedSeconds: Long = 0L,
     val playedAt: Long // Epoch timestamp in milliseconds
 ) {
     fun toSong(): Song {
@@ -22,4 +23,10 @@ data class ListeningHistoryEntity(
             duration = duration
         )
     }
+
+    /**
+     * Returns the active listening duration in seconds recorded for this track session.
+     */
+    val effectiveListenedSeconds: Long
+        get() = listenedSeconds.coerceAtLeast(0L)
 }

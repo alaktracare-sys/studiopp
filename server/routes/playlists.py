@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Form, Request, HTTPException
+from fastapi.responses import Response, JSONResponse
 from database import get_db
 import os
+import hashlib
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
 
@@ -118,7 +120,13 @@ def get_playlist_songs(playlist_id: int, request: Request):
 
     base_url = get_base_url(request)
 
-    return [
+    pl_sig = f"pl_{playlist_id}_{len(songs)}_{songs[0]['id'] if songs else 0}"
+    etag = f'"{hashlib.md5(pl_sig.encode()).hexdigest()}"'
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip('"') == etag.strip('"'):
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
+
+    data = [
         {
             "id": s["id"],
             "title": s["title"],
@@ -129,13 +137,14 @@ def get_playlist_songs(playlist_id: int, request: Request):
         }
         for s in songs
     ]
+    return JSONResponse(content=data, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
 
 
 # =========================
 # GET USER PLAYLISTS
 # =========================
 @router.get("/{user_id}")
-def get_playlists(user_id: int):
+def get_playlists(user_id: int, request: Request):
     db = get_db()
     playlists = db.execute(
         """
@@ -147,7 +156,13 @@ def get_playlists(user_id: int):
         (user_id,)
     ).fetchall()
 
-    return [
+    user_pl_sig = f"user_{user_id}_{len(playlists)}_{playlists[0]['id'] if playlists else 0}"
+    etag = f'"{hashlib.md5(user_pl_sig.encode()).hexdigest()}"'
+    client_etag = request.headers.get("if-none-match")
+    if client_etag and client_etag.strip('"') == etag.strip('"'):
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
+
+    data = [
         {
             "id": p["id"],
             "user_id": p["user_id"],
@@ -156,6 +171,7 @@ def get_playlists(user_id: int):
         }
         for p in playlists
     ]
+    return JSONResponse(content=data, headers={"ETag": etag, "Cache-Control": "private, max-age=60"})
 
 
 # =========================

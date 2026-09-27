@@ -42,13 +42,14 @@ import com.example.ui.screens.library.LibraryScreen
 import com.example.ui.screens.player.PlayerScreen
 import com.example.ui.screens.playlist.AddSongToPlaylistScreen
 import com.example.ui.screens.playlist.PlaylistScreen
+import com.example.ui.screens.profile.FullListeningHistorySheet
 import com.example.ui.screens.profile.ProfileScreen
 import com.example.ui.screens.search.SearchScreen
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 enum class Screen {
-    HOME, SEARCH, LIBRARY, PLAYLIST, ADD_SONGS, PROFILE
+    HOME, SEARCH, LIBRARY, PLAYLIST, ADD_SONGS, PROFILE, HISTORY
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +74,8 @@ fun MainShell(
     val scope = rememberCoroutineScope()
 
     val playbackState by audioController.playbackState.collectAsState()
+    val isOnline by remember { com.example.util.NetworkMonitor.observeNetwork(context) }
+        .collectAsState(initial = com.example.util.NetworkMonitor.isOnline(context))
 
     val navigateBackFromPlaylist: () -> Unit = {
         currentScreen = playlistOriginScreen
@@ -85,6 +88,10 @@ fun MainShell(
             showFullPlayer -> showFullPlayer = false
             currentScreen == Screen.ADD_SONGS -> currentScreen = Screen.PLAYLIST
             currentScreen == Screen.PLAYLIST -> navigateBackFromPlaylist()
+            currentScreen == Screen.HISTORY -> {
+                currentScreen = Screen.HOME
+                currentTab = 0
+            }
             currentScreen == Screen.PROFILE -> {
                 currentScreen = Screen.HOME
                 currentTab = 0
@@ -338,11 +345,16 @@ fun MainShell(
                     }
                 }
 
-                Box(
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
                     when (currentScreen) {
                         Screen.HOME -> {
                         HomeScreen(
@@ -413,10 +425,23 @@ fun MainShell(
                             onLogout = onLogout
                         )
                     }
+
+                    Screen.HISTORY -> {
+                        val historyList by repository.listeningHistory.collectAsState(initial = emptyList())
+                        FullListeningHistorySheet(
+                            historyList = historyList,
+                            repository = repository,
+                            audioController = audioController,
+                            onDismiss = {
+                                currentScreen = Screen.HOME
+                                currentTab = 0
+                            }
+                        )
+                    }
                 }
 
                 // Floating MiniPlayer over the scrolling content (no black square background)
-                if (!showFullPlayer && playbackState.currentSong != null && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST)) {
+                if (!showFullPlayer && playbackState.currentSong != null && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST, Screen.HISTORY)) {
                     val miniPlayerBottomPad = if (currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
                         padding.calculateBottomPadding() + 6.dp
                     } else {
@@ -446,6 +471,7 @@ fun MainShell(
             }
         }
     }
+}
 
         // Full Screen Player Modal / Overlay
         AnimatedVisibility(

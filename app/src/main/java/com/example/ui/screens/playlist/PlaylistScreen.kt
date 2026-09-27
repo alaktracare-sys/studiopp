@@ -53,6 +53,7 @@ fun PlaylistScreen(
 
     val isDownloadedPlaylist = playlistId == Playlist.ID_DOWNLOADED || playlistId == -2 || playlistName.contains("Download", ignoreCase = true)
     val isLikedPlaylist = playlistId == Playlist.ID_LIKED || playlistId == -1 || playlistName.contains("Liked", ignoreCase = true)
+    val isOfflineBackup = playlistId == Playlist.ID_OFFLINE_BACKUP || playlistId == -3 || playlistName.contains("Offline Backup", ignoreCase = true)
 
     val playbackState by audioController.playbackState.collectAsState()
     val downloadProgress by repository.downloadManager.downloadProgress.collectAsState()
@@ -62,12 +63,25 @@ fun PlaylistScreen(
 
     LaunchedEffect(playlistId) {
         isLoading = true
-        songs = if (isLikedPlaylist) {
-            repository.getLikedSongs()
-        } else if (isDownloadedPlaylist) {
-            repository.getDownloadedSongs()
-        } else {
-            repository.getPlaylistSongs(playlistId)
+        val cached = when {
+            isOfflineBackup -> repository.getOfflineBackupSongs()
+            isLikedPlaylist -> repository.getCachedLikedSongs()
+            isDownloadedPlaylist -> repository.getDownloadedSongs()
+            else -> repository.getCachedPlaylistSongs(playlistId)
+        }
+        if (cached.isNotEmpty()) {
+            songs = cached
+            isLoading = false
+        }
+
+        val fresh = when {
+            isOfflineBackup -> repository.getOfflineBackupSongs()
+            isLikedPlaylist -> repository.getLikedSongs()
+            isDownloadedPlaylist -> repository.getDownloadedSongs()
+            else -> repository.getPlaylistSongs(playlistId)
+        }
+        if (fresh.isNotEmpty()) {
+            songs = fresh
         }
         isLoading = false
     }
@@ -98,6 +112,7 @@ fun PlaylistScreen(
                             Brush.verticalGradient(
                                 listOf(
                                     when {
+                                        isOfflineBackup -> Color(0xFF0284C7).copy(alpha = 0.5f)
                                         isLikedPlaylist -> Color(0xFF6366F1).copy(alpha = 0.5f)
                                         isDownloadedPlaylist -> Color(0xFF0D9488).copy(alpha = 0.5f)
                                         else -> AlaktraMint.copy(alpha = 0.35f)
@@ -136,6 +151,7 @@ fun PlaylistScreen(
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
                                     when {
+                                        isOfflineBackup -> Brush.linearGradient(listOf(Color(0xFF0369A1), Color(0xFF06B6D4), AlaktraMint))
                                         isLikedPlaylist -> Brush.linearGradient(listOf(Color(0xFF4F46E5), Color(0xFF06B6D4), AlaktraMint))
                                         isDownloadedPlaylist -> Brush.linearGradient(listOf(Color(0xFF0F766E), Color(0xFF14B8A6), AlaktraMint))
                                         else -> Brush.linearGradient(listOf(AlaktraMint, AlaktraCyan))
@@ -144,13 +160,14 @@ fun PlaylistScreen(
                         ) {
                             Icon(
                                 imageVector = when {
+                                    isOfflineBackup -> Icons.Default.CloudDone
                                     isLikedPlaylist -> Icons.Default.Favorite
                                     isDownloadedPlaylist -> Icons.Default.DownloadDone
                                     else -> Icons.Default.QueueMusic
                                 },
                                 contentDescription = null,
                                 tint = when {
-                                    isLikedPlaylist || isDownloadedPlaylist -> Color.White
+                                    isOfflineBackup || isLikedPlaylist || isDownloadedPlaylist -> Color.White
                                     else -> Color(0xFF041C12)
                                 },
                                 modifier = Modifier.size(36.dp)
@@ -171,6 +188,7 @@ fun PlaylistScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = when {
+                                    isOfflineBackup -> "${displaySongs.size} tracks • Offline Backup (Cache Memory)"
                                     isDownloadedPlaylist -> "${displaySongs.size} tracks • Offline Music"
                                     isLikedPlaylist -> "${displaySongs.size} tracks • Favorites Collection"
                                     else -> "${displaySongs.size} tracks • Alaktra Collection"
@@ -196,27 +214,27 @@ fun PlaylistScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isDownloadedPlaylist) {
+                        if (isDownloadedPlaylist || isOfflineBackup) {
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = Color(0xFF0F766E).copy(alpha = 0.25f),
-                                border = BorderStroke(1.dp, Color(0xFF14B8A6).copy(alpha = 0.5f))
+                                color = (if (isOfflineBackup) Color(0xFF0369A1) else Color(0xFF0F766E)).copy(alpha = 0.25f),
+                                border = BorderStroke(1.dp, (if (isOfflineBackup) Color(0xFF06B6D4) else Color(0xFF14B8A6)).copy(alpha = 0.5f))
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.OfflinePin,
+                                        imageVector = if (isOfflineBackup) Icons.Default.CloudDone else Icons.Default.OfflinePin,
                                         contentDescription = null,
-                                        tint = AlaktraMint,
+                                        tint = if (isOfflineBackup) AlaktraCyan else AlaktraMint,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Offline Ready",
+                                        text = if (isOfflineBackup) "Cache Memory • Ready Offline" else "Offline Ready",
                                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = AlaktraMint
+                                        color = if (isOfflineBackup) AlaktraCyan else AlaktraMint
                                     )
                                 }
                             }
@@ -306,8 +324,8 @@ fun PlaylistScreen(
                 }
             }
 
-            // Add Song Row (if not Liked Songs or Downloaded Songs auto playlist)
-            if (!isLikedPlaylist && !isDownloadedPlaylist) {
+            // Add Song Row (if not Liked Songs or Downloaded Songs or Offline Backup auto playlist)
+            if (!isLikedPlaylist && !isDownloadedPlaylist && !isOfflineBackup) {
                 item {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
