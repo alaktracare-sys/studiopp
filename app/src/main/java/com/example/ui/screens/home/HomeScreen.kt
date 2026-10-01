@@ -85,17 +85,13 @@ fun HomeScreen(
         }
 
         scope.launch {
-            val freshSongs = repository.getSongs()
-            if (freshSongs.isNotEmpty()) {
-                songs = freshSongs
-            }
+            val freshSongs = repository.getSongs(forceRefresh = true)
+            songs = freshSongs
             isLoading = false
         }
         scope.launch {
-            val freshPlaylists = repository.getPlaylists()
-            if (freshPlaylists.isNotEmpty()) {
-                playlists = freshPlaylists
-            }
+            val freshPlaylists = repository.getPlaylists(forceRefresh = true)
+            playlists = freshPlaylists
         }
     }
 

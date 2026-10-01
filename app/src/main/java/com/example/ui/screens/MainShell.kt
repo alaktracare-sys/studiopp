@@ -1,9 +1,9 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +26,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -116,6 +118,16 @@ fun MainShell(
     val windowSize = rememberWindowSizeInfo()
     val useNavRail = !windowSize.isCompact
 
+    val screensWithBottomNav = listOf(
+        Screen.HOME,
+        Screen.SEARCH,
+        Screen.LIBRARY,
+        Screen.PLAYLIST,
+        Screen.PROFILE,
+        Screen.HISTORY
+    )
+    val hasBottomBar = !useNavRail && !showFullPlayer && currentScreen in screensWithBottomNav
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -124,40 +136,64 @@ fun MainShell(
         Scaffold(
             containerColor = AlaktraBackground,
             bottomBar = {
-                if (!useNavRail && !showFullPlayer && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
-                    Box(
+                if (hasBottomBar) {
+                    Surface(
+                        color = Color(0xFF121212),
+                        contentColor = AlaktraTextPrimary,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .navigationBarsPadding(),
-                        contentAlignment = Alignment.BottomCenter
+                            .drawBehind {
+                                // Crisp subtle top divider line spanning full width
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.08f),
+                                    start = Offset(0f, 0f),
+                                    end = Offset(size.width, 0f),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            }
                     ) {
-                        NavigationBar(
-                            containerColor = AlaktraSurface.copy(alpha = 0.65f),
-                            contentColor = AlaktraTextPrimary,
-                            tonalElevation = 0.dp,
-                            windowInsets = WindowInsets(0, 0, 0, 0),
+                        Box(
                             modifier = Modifier
-                                .widthIn(max = 720.dp)
-                                .height(69.dp)
-                                .border(width = 0.5.dp, color = Color.Black.copy(alpha = 0.12f), shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                .fillMaxWidth()
+                                .navigationBarsPadding(),
+                            contentAlignment = Alignment.BottomCenter
                         ) {
+                            NavigationBar(
+                                containerColor = Color(0xFF121212),
+                                contentColor = AlaktraTextPrimary,
+                                tonalElevation = 0.dp,
+                                windowInsets = WindowInsets(0, 0, 0, 0),
+                                modifier = Modifier
+                                    .widthIn(max = 760.dp)
+                                    .height(64.dp)
+                            ) {
+                            val isHomeSelected = (currentScreen == Screen.HOME && currentTab == 0) ||
+                                (currentScreen == Screen.PLAYLIST && playlistOriginTab == 0) ||
+                                (currentScreen == Screen.PROFILE && (playlistOriginTab == 0 || currentTab == 0))
+
+                            val isSearchSelected = (currentScreen == Screen.SEARCH && currentTab == 1) ||
+                                (currentScreen == Screen.PLAYLIST && playlistOriginTab == 1)
+
+                            val isLibrarySelected = (currentScreen == Screen.LIBRARY && currentTab == 2) ||
+                                (currentScreen == Screen.PLAYLIST && playlistOriginTab == 2)
+
                             NavigationBarItem(
-                                selected = currentTab == 0 && currentScreen == Screen.HOME,
+                                selected = isHomeSelected,
                                 onClick = {
                                     currentTab = 0
                                     currentScreen = Screen.HOME
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (currentTab == 0 && currentScreen == Screen.HOME) Icons.Default.Home else Icons.Outlined.Home,
+                                        imageVector = if (isHomeSelected) Icons.Default.Home else Icons.Outlined.Home,
                                         contentDescription = "Home"
                                     )
                                 },
                                 label = {
                                     Text(
                                         "Home",
-                                        fontWeight = if (currentTab == 0) FontWeight.Bold else FontWeight.Normal
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isHomeSelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
@@ -165,26 +201,27 @@ fun MainShell(
                                     selectedTextColor = AlaktraMint,
                                     unselectedIconColor = AlaktraTextMuted,
                                     unselectedTextColor = AlaktraTextMuted,
-                                    indicatorColor = AlaktraMint.copy(alpha = 0.15f)
+                                    indicatorColor = Color.Transparent
                                 )
                             )
 
                             NavigationBarItem(
-                                selected = currentTab == 1 && currentScreen == Screen.SEARCH,
+                                selected = isSearchSelected,
                                 onClick = {
                                     currentTab = 1
                                     currentScreen = Screen.SEARCH
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (currentTab == 1 && currentScreen == Screen.SEARCH) Icons.Default.Search else Icons.Outlined.Search,
+                                        imageVector = if (isSearchSelected) Icons.Default.Search else Icons.Outlined.Search,
                                         contentDescription = "Search"
                                     )
                                 },
                                 label = {
                                     Text(
                                         "Search",
-                                        fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Normal
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSearchSelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
@@ -192,26 +229,27 @@ fun MainShell(
                                     selectedTextColor = AlaktraMint,
                                     unselectedIconColor = AlaktraTextMuted,
                                     unselectedTextColor = AlaktraTextMuted,
-                                    indicatorColor = AlaktraMint.copy(alpha = 0.15f)
+                                    indicatorColor = Color.Transparent
                                 )
                             )
 
                             NavigationBarItem(
-                                selected = currentTab == 2 && currentScreen == Screen.LIBRARY,
+                                selected = isLibrarySelected,
                                 onClick = {
                                     currentTab = 2
                                     currentScreen = Screen.LIBRARY
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (currentTab == 2 && currentScreen == Screen.LIBRARY) Icons.Default.LibraryMusic else Icons.Outlined.LibraryMusic,
-                                        contentDescription = "Library"
+                                        imageVector = if (isLibrarySelected) Icons.Default.LibraryMusic else Icons.Outlined.LibraryMusic,
+                                        contentDescription = "Your Library"
                                     )
                                 },
                                 label = {
                                     Text(
-                                        "Library",
-                                        fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Normal
+                                        "Your Library",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isLibrarySelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
@@ -219,23 +257,24 @@ fun MainShell(
                                     selectedTextColor = AlaktraMint,
                                     unselectedIconColor = AlaktraTextMuted,
                                     unselectedTextColor = AlaktraTextMuted,
-                                    indicatorColor = AlaktraMint.copy(alpha = 0.15f)
+                                    indicatorColor = Color.Transparent
                                 )
                             )
                         }
                     }
                 }
             }
+        }
         ) { padding ->
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
                         top = padding.calculateTopPadding(),
-                        bottom = if (!useNavRail && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) 0.dp else padding.calculateBottomPadding()
+                        bottom = padding.calculateBottomPadding()
                     )
             ) {
-                if (useNavRail && !showFullPlayer && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST, Screen.PROFILE)) {
+                if (useNavRail && !showFullPlayer && currentScreen in screensWithBottomNav) {
                     NavigationRail(
                         containerColor = AlaktraSurface.copy(alpha = 0.25f),
                         contentColor = AlaktraTextPrimary,
@@ -355,120 +394,166 @@ fun MainShell(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                    when (currentScreen) {
-                        Screen.HOME -> {
-                        HomeScreen(
-                            repository = repository,
-                            audioController = audioController,
-                            onNavigateToProfile = { currentScreen = Screen.PROFILE },
-                            onNavigateToPlaylistSelect = { song ->
-                                scope.launch {
-                                    availablePlaylists = repository.getPlaylists()
-                                    songForPlaylistSelection = song
+                        AnimatedContent(
+                            targetState = currentScreen,
+                            transitionSpec = {
+                                val isForward = (targetState == Screen.PLAYLIST || targetState == Screen.PROFILE || targetState == Screen.ADD_SONGS) &&
+                                        (initialState == Screen.HOME || initialState == Screen.SEARCH || initialState == Screen.LIBRARY)
+                                val isBackward = (initialState == Screen.PLAYLIST || initialState == Screen.PROFILE || initialState == Screen.ADD_SONGS) &&
+                                        (targetState == Screen.HOME || targetState == Screen.SEARCH || targetState == Screen.LIBRARY)
+
+                                when {
+                                    isForward -> {
+                                        (slideInHorizontally(
+                                            initialOffsetX = { (it * 0.12f).toInt() },
+                                            animationSpec = tween(280, easing = FastOutSlowInEasing)
+                                        ) + fadeIn(tween(240))).togetherWith(
+                                            slideOutHorizontally(
+                                                targetOffsetX = { (-it * 0.12f).toInt() },
+                                                animationSpec = tween(240, easing = FastOutSlowInEasing)
+                                            ) + fadeOut(tween(200))
+                                        )
+                                    }
+                                    isBackward -> {
+                                        (slideInHorizontally(
+                                            initialOffsetX = { (-it * 0.12f).toInt() },
+                                            animationSpec = tween(260, easing = FastOutSlowInEasing)
+                                        ) + fadeIn(tween(240))).togetherWith(
+                                            slideOutHorizontally(
+                                                targetOffsetX = { (it * 0.12f).toInt() },
+                                                animationSpec = tween(240, easing = FastOutSlowInEasing)
+                                            ) + fadeOut(tween(200))
+                                        )
+                                    }
+                                    else -> {
+                                        (fadeIn(tween(200)) + scaleIn(
+                                            initialScale = 0.985f,
+                                            animationSpec = tween(200, easing = FastOutSlowInEasing)
+                                        )).togetherWith(
+                                            fadeOut(tween(160))
+                                        )
+                                    }
                                 }
                             },
-                            onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
-                            onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
-                            onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
-                        )
-                    }
+                            label = "ScreenTransition",
+                            modifier = Modifier.fillMaxSize()
+                        ) { targetScreen ->
+                            when (targetScreen) {
+                                Screen.HOME -> {
+                                    HomeScreen(
+                                        repository = repository,
+                                        audioController = audioController,
+                                        onNavigateToProfile = { currentScreen = Screen.PROFILE },
+                                        onNavigateToPlaylistSelect = { song ->
+                                            scope.launch {
+                                                availablePlaylists = repository.getPlaylists()
+                                                songForPlaylistSelection = song
+                                            }
+                                        },
+                                        onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
+                                        onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
+                                        onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
+                                    )
+                                }
 
-                    Screen.SEARCH -> {
-                        SearchScreen(
-                            repository = repository,
-                            audioController = audioController,
-                            onNavigateToPlaylistSelect = { song ->
-                                scope.launch {
-                                    availablePlaylists = repository.getPlaylists()
-                                    songForPlaylistSelection = song
+                                Screen.SEARCH -> {
+                                    SearchScreen(
+                                        repository = repository,
+                                        audioController = audioController,
+                                        onNavigateToPlaylistSelect = { song ->
+                                            scope.launch {
+                                                availablePlaylists = repository.getPlaylists()
+                                                songForPlaylistSelection = song
+                                            }
+                                        }
+                                    )
+                                }
+
+                                Screen.LIBRARY -> {
+                                    LibraryScreen(
+                                        repository = repository,
+                                        onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
+                                        onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
+                                        onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
+                                    )
+                                }
+
+                                Screen.PLAYLIST -> {
+                                    PlaylistScreen(
+                                        playlistId = activePlaylistId,
+                                        playlistName = activePlaylistName,
+                                        repository = repository,
+                                        audioController = audioController,
+                                        onBack = navigateBackFromPlaylist,
+                                        onNavigateToAddSongs = { currentScreen = Screen.ADD_SONGS }
+                                    )
+                                }
+
+                                Screen.ADD_SONGS -> {
+                                    AddSongToPlaylistScreen(
+                                        playlistId = activePlaylistId,
+                                        repository = repository,
+                                        onBack = { currentScreen = Screen.PLAYLIST }
+                                    )
+                                }
+
+                                Screen.PROFILE -> {
+                                    ProfileScreen(
+                                        repository = repository,
+                                        audioController = audioController,
+                                        onBack = {
+                                            currentScreen = Screen.HOME
+                                            currentTab = 0
+                                        },
+                                        onLogout = onLogout
+                                    )
+                                }
+
+                                Screen.HISTORY -> {
+                                    val historyList by repository.listeningHistory.collectAsState(initial = emptyList())
+                                    FullListeningHistorySheet(
+                                        historyList = historyList,
+                                        repository = repository,
+                                        audioController = audioController,
+                                        onDismiss = {
+                                            currentScreen = Screen.HOME
+                                            currentTab = 0
+                                        }
+                                    )
                                 }
                             }
-                        )
-                    }
+                        }
 
-                    Screen.LIBRARY -> {
-                        LibraryScreen(
-                            repository = repository,
-                            onNavigateToPlaylist = { id, name -> openPlaylist(id, name) },
-                            onNavigateToLikedSongs = { openPlaylist(Playlist.ID_LIKED, "Liked Songs") },
-                            onNavigateToDownloadedSongs = { openPlaylist(Playlist.ID_DOWNLOADED, "Downloaded Songs") }
-                        )
+                        // Floating MiniPlayer over the scrolling content (visible in Playlist & Settings too)
+                        val showMiniPlayer = !showFullPlayer && playbackState.currentSong != null && currentScreen in screensWithBottomNav
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showMiniPlayer,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(tween(200)),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(tween(160)),
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                        ) {
+                            val miniPlayerBottomPad = 8.dp
+                            MiniPlayer(
+                                playbackState = playbackState,
+                                onTogglePlay = { audioController.togglePlayPause() },
+                                onNext = { audioController.next() },
+                                onPrevious = { audioController.previous() },
+                                onLikeToggle = {
+                                    playbackState.currentSong?.let { song ->
+                                        scope.launch {
+                                            val isLiked = repository.toggleLike(song)
+                                            audioController.updateSongLiked(song.id, isLiked)
+                                        }
+                                    }
+                                },
+                                onExpand = { showFullPlayer = true },
+                                modifier = Modifier
+                                    .widthIn(max = 760.dp)
+                                    .padding(horizontal = 8.dp)
+                                    .padding(bottom = miniPlayerBottomPad)
+                            )
+                        }
                     }
-
-                    Screen.PLAYLIST -> {
-                        PlaylistScreen(
-                            playlistId = activePlaylistId,
-                            playlistName = activePlaylistName,
-                            repository = repository,
-                            audioController = audioController,
-                            onBack = navigateBackFromPlaylist,
-                            onNavigateToAddSongs = { currentScreen = Screen.ADD_SONGS }
-                        )
-                    }
-
-                    Screen.ADD_SONGS -> {
-                        AddSongToPlaylistScreen(
-                            playlistId = activePlaylistId,
-                            repository = repository,
-                            onBack = { currentScreen = Screen.PLAYLIST }
-                        )
-                    }
-
-                    Screen.PROFILE -> {
-                        ProfileScreen(
-                            repository = repository,
-                            audioController = audioController,
-                            onBack = {
-                                currentScreen = Screen.HOME
-                                currentTab = 0
-                            },
-                            onLogout = onLogout
-                        )
-                    }
-
-                    Screen.HISTORY -> {
-                        val historyList by repository.listeningHistory.collectAsState(initial = emptyList())
-                        FullListeningHistorySheet(
-                            historyList = historyList,
-                            repository = repository,
-                            audioController = audioController,
-                            onDismiss = {
-                                currentScreen = Screen.HOME
-                                currentTab = 0
-                            }
-                        )
-                    }
-                }
-
-                // Floating MiniPlayer over the scrolling content (no black square background)
-                if (!showFullPlayer && playbackState.currentSong != null && currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY, Screen.PLAYLIST, Screen.HISTORY)) {
-                    val miniPlayerBottomPad = if (currentScreen in listOf(Screen.HOME, Screen.SEARCH, Screen.LIBRARY)) {
-                        padding.calculateBottomPadding() + 6.dp
-                    } else {
-                        12.dp
-                    }
-                    MiniPlayer(
-                        playbackState = playbackState,
-                        onTogglePlay = { audioController.togglePlayPause() },
-                        onNext = { audioController.next() },
-                        onPrevious = { audioController.previous() },
-                        onLikeToggle = {
-                            playbackState.currentSong?.let { song ->
-                                scope.launch {
-                                    val isLiked = repository.toggleLike(song)
-                                    audioController.updateSongLiked(song.id, isLiked)
-                                }
-                            }
-                        },
-                        onExpand = { showFullPlayer = true },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .widthIn(max = 760.dp)
-                            .padding(horizontal = 6.dp)
-                            .padding(bottom = miniPlayerBottomPad)
-                    )
-                }
-            }
         }
     }
 }

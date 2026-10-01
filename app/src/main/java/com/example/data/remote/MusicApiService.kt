@@ -40,20 +40,20 @@ data class MessageResponse(
 // ----------------- SONG MODELS -----------------
 
 data class SongDto(
-    val id: Int,
-    val title: String,
-    val artist: String,
-    @SerializedName("audio_url") val audioUrl: String,
-    @SerializedName("cover_url") val coverUrl: String,
+    val id: Int = 0,
+    val title: String? = null,
+    val artist: String? = null,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    @SerializedName("cover_url") val coverUrl: String? = null,
     val duration: Double = 0.0
 )
 
 // ----------------- PLAYLIST MODELS -----------------
 
 data class ServerPlaylistDto(
-    val id: Int,
-    @SerializedName("user_id") val userId: Int,
-    val name: String,
+    val id: Int = 0,
+    @SerializedName("user_id") val userId: Int = 0,
+    val name: String? = null,
     @SerializedName("is_system") val isSystem: Int = 0
 )
 
@@ -63,7 +63,7 @@ data class LikedPlaylistResponse(
 )
 
 data class CreatePlaylistResponse(
-    val success: Boolean,
+    val success: Boolean = false,
     val id: Int? = null,
     val name: String? = null,
     val error: String? = null
@@ -79,6 +79,10 @@ data class GenericSuccessResponse(
 // ----------------- RETROFIT INTERFACE -----------------
 
 interface MusicApiService {
+
+    // === HEALTH & SYSTEM ===
+    @GET("health")
+    suspend fun healthCheck(): Response<Map<String, Any>>
 
     // === AUTH ===
     @POST("auth/signup")

@@ -84,11 +84,16 @@ class AuthPreferences(context: Context) {
 
     fun setServerBaseUrl(url: String) {
         val trimmed = url.trim()
-        val safeUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
-            if (trimmed.endsWith("/")) trimmed else "$trimmed/"
-        } else {
-            DEFAULT_SERVER_URL
+        if (trimmed.isBlank()) {
+            prefs.edit().putString(KEY_SERVER_URL, DEFAULT_SERVER_URL).apply()
+            return
         }
+        val withScheme = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            trimmed
+        } else {
+            "http://$trimmed"
+        }
+        val safeUrl = if (withScheme.endsWith("/")) withScheme else "$withScheme/"
         prefs.edit().putString(KEY_SERVER_URL, safeUrl).apply()
     }
 

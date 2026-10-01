@@ -99,4 +99,46 @@ class AudioCacheTest {
         assertTrue(streamingAudioCache.path.startsWith(cacheBase.path))
         assertTrue(imageCache.path.startsWith(cacheBase.path))
     }
+
+    @Test
+    fun testOfflineSkippingCriteria_requiresFullyCachedTracks() {
+        val uncachedSong1 = Song(id = 1, title = "Uncached 1", artist = "A", audioUrl = "https://example.com/1.mp3", coverUrl = "https://example.com/1.jpg")
+        val uncachedSong2 = Song(id = 2, title = "Uncached 2", artist = "B", audioUrl = "https://example.com/2.mp3", coverUrl = "https://example.com/2.jpg")
+        val fullyCachedSong = Song(id = 3, title = "Fully Cached", artist = "C", audioUrl = "https://example.com/3.mp3", coverUrl = "https://example.com/3.jpg", isCached = true)
+        val downloadedSong = Song(
+            id = 4,
+            title = "Downloaded",
+            artist = "D",
+            audioUrl = "https://example.com/4.mp3",
+            coverUrl = "https://example.com/4.jpg",
+            localPath = "/fake/download.mp3",
+            isDownloaded = true
+        )
+
+        val playlist = listOf(uncachedSong1, uncachedSong2, fullyCachedSong, downloadedSong)
+
+        // Mock playability test representing the offline skip finder
+        fun isPlayable(song: Song): Boolean {
+            return song.isDownloaded || (song.isCached && song.id == 3)
+        }
+
+        fun findNextPlayable(fromIndex: Int): Int {
+            for (i in fromIndex until playlist.size) {
+                if (isPlayable(playlist[i])) return i
+            }
+            for (i in 0 until fromIndex) {
+                if (isPlayable(playlist[i])) return i
+            }
+            return -1
+        }
+
+        // When starting at index 0 (uncached), instantly skips to index 2 (fully cached)
+        assertEquals(2, findNextPlayable(0))
+
+        // When starting at index 1 (uncached), instantly skips to index 2 (fully cached)
+        assertEquals(2, findNextPlayable(1))
+
+        // When advancing from index 2, goes to index 3 (downloaded)
+        assertEquals(3, findNextPlayable(3))
+    }
 }

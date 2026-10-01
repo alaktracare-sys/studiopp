@@ -49,10 +49,8 @@ fun LibraryScreen(
         }
         likedSongsCount = repository.authPreferences.getLikedSongIds().size
 
-        val fresh = repository.getPlaylists()
-        if (fresh.isNotEmpty()) {
-            playlists = fresh
-        }
+        val fresh = repository.getPlaylists(forceRefresh = true)
+        playlists = fresh
     }
 
     Scaffold(
@@ -107,7 +105,7 @@ fun LibraryScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 110.dp)
+                contentPadding = PaddingValues(bottom = 150.dp)
             ) {
                 // Liked Songs card
                 item {

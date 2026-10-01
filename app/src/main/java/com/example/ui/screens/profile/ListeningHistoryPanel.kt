@@ -47,13 +47,15 @@ data class DaywiseGroup(
 )
 
 fun formatListeningSeconds(seconds: Long): String {
-    val hrs = seconds / 3600
-    val mins = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return when {
-        hrs > 0 -> "${hrs}h ${mins}m"
-        mins > 0 -> "${mins}m ${secs}s"
-        else -> "${secs}s"
+    if (seconds < 60L) return "${seconds}s"
+    val hrs = seconds / 3600L
+    val remSecTotal = seconds % 3600L
+    val mins = remSecTotal / 60L
+    val sec = remSecTotal % 60L
+    return if (hrs > 0L) {
+        "${hrs}h ${mins}m"
+    } else {
+        if (sec > 0L) "${mins}m ${sec}s" else "${mins}m"
     }
 }
 
@@ -207,11 +209,6 @@ fun ListeningHistorySummaryCard(
 
                 val previewItems = if (todayItems.isNotEmpty()) todayItems.take(2) else historyList.take(2)
                 previewItems.forEach { item ->
-                    val timeStr = remember(item.playedAt) { formatTimeShort(item.playedAt) }
-                    val listenedStr = remember(item.effectiveListenedSeconds) {
-                        formatListeningSeconds(item.effectiveListenedSeconds)
-                    }
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -237,24 +234,11 @@ fun ListeningHistorySummaryCard(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${item.artist} • $timeStr",
+                                text = item.artist,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = AlaktraTextSecondary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(AlaktraSurface)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = listenedStr,
-                                color = AlaktraMint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -272,10 +256,8 @@ fun FullListeningHistorySheet(
     audioController: AudioController,
     onDismiss: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
     val today = remember { LocalDate.now() }
     var searchQuery by remember { mutableStateOf("") }
-    var showClearConfirmDialog by remember { mutableStateOf(false) }
 
     // Search query filter over all recorded history
     val filteredItems = remember(historyList, searchQuery) {
@@ -324,15 +306,6 @@ fun FullListeningHistorySheet(
         Triple(items.size, uniqueCount, totalSec)
     }
 
-    // Current selection stats
-    val totalTracksInView = filteredItems.size
-    val totalSecondsInView = remember(filteredItems) {
-        filteredItems.sumOf { it.effectiveListenedSeconds }
-    }
-    val uniqueTracksInView = remember(filteredItems) {
-        filteredItems.map { it.songId }.distinct().size
-    }
-
     Scaffold(
         containerColor = AlaktraBackground,
         topBar = {
@@ -358,17 +331,6 @@ fun FullListeningHistorySheet(
                             contentDescription = "Back",
                             tint = AlaktraTextPrimary
                         )
-                    }
-                },
-                actions = {
-                    if (historyList.isNotEmpty()) {
-                        IconButton(onClick = { showClearConfirmDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = "Clear History",
-                                tint = AlaktraTextSecondary
-                            )
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AlaktraBackground)
@@ -522,7 +484,7 @@ fun FullListeningHistorySheet(
                                         color = AlaktraMint
                                     )
                                     Text(
-                                        text = if (todayStats.first > 0) "Accurate to seconds" else "No plays yet today",
+                                        text = if (todayStats.first > 0) "Updates after each hour" else "No plays yet today",
                                         fontSize = 11.sp,
                                         color = AlaktraTextSecondary
                                     )
@@ -634,11 +596,6 @@ fun FullListeningHistorySheet(
                                         val allSongs = dayGroup.items.map { it.toSong() }
                                         val index = allSongs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                                         audioController.playQueue(allSongs, index, dayGroup.dayTitle)
-                                    },
-                                    onDelete = {
-                                        scope.launch {
-                                            repository.deleteHistoryItem(historyItem.id)
-                                        }
                                     }
                                 )
                             }
@@ -647,39 +604,6 @@ fun FullListeningHistorySheet(
                 }
             }
         }
-    }
-
-    // Confirm Clear All Dialog
-    if (showClearConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirmDialog = false },
-            title = { Text("Clear Listening History?", color = AlaktraTextPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "This will permanently delete all stored listening history and daily analytics.",
-                    color = AlaktraTextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            repository.clearListeningHistory()
-                            showClearConfirmDialog = false
-                        }
-                    }
-                ) {
-                    Text("Clear All", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirmDialog = false }) {
-                    Text("Cancel", color = AlaktraTextSecondary)
-                }
-            },
-            containerColor = AlaktraCard,
-            shape = RoundedCornerShape(16.dp)
-        )
     }
 }
 
@@ -771,13 +695,8 @@ fun DaywiseHeader(
 @Composable
 fun HistorySongRow(
     item: ListeningHistoryEntity,
-    onPlay: () -> Unit,
-    onDelete: () -> Unit
+    onPlay: () -> Unit
 ) {
-    val timeFormatted = remember(item.playedAt) { formatTimeShort(item.playedAt) }
-    val listenedSec = item.effectiveListenedSeconds
-    val listenedFormatted = remember(listenedSec) { formatListeningSeconds(listenedSec) }
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -803,7 +722,7 @@ fun HistorySongRow(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Title, Artist, and Listen Time details
+        // Title and Artist (Clean pellet: no played time or duration badge)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = item.title,
@@ -815,52 +734,16 @@ fun HistorySongRow(
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = item.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AlaktraTextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                Text(
-                    text = " • $timeFormatted",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AlaktraTextMuted
-                )
-            }
+            Text(
+                text = item.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = AlaktraTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         Spacer(modifier = Modifier.width(8.dp))
-
-        // Time listened badge
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(AlaktraSurface)
-                .border(1.dp, AlaktraBorder, RoundedCornerShape(6.dp))
-                .padding(horizontal = 7.dp, vertical = 3.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = AlaktraMint,
-                    modifier = Modifier.size(11.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = listenedFormatted,
-                    color = AlaktraMint,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(4.dp))
 
         // Play Button
         IconButton(
@@ -872,19 +755,6 @@ fun HistorySongRow(
                 contentDescription = "Play Track",
                 tint = AlaktraTextPrimary,
                 modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // Delete Item Button
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Remove from history",
-                tint = AlaktraTextMuted,
-                modifier = Modifier.size(16.dp)
             )
         }
     }

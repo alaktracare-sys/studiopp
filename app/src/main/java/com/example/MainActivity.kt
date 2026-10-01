@@ -89,4 +89,40 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        val audioController = (application as? AlreadyApp)?.audioController
+        if (audioController != null && event?.repeatCount == 0) {
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    audioController.play()
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    audioController.pause()
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
+                    audioController.togglePlayPause()
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_MEDIA_NEXT,
+                android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    audioController.next()
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    audioController.previous()
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_MEDIA_STOP -> {
+                    audioController.pause()
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
 }

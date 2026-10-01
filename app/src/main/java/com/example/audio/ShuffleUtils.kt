@@ -44,10 +44,12 @@ object ShuffleUtils {
                 for (k in (i + 1) until maxLookahead) {
                     val candidateArtist = list[k].artist.trim().lowercase()
                     if (candidateArtist != currentArtist) {
-                        val nextArtist = if (k + 1 < n) list[k + 1].artist.trim().lowercase() else null
-                        if (candidateArtist != prevArtist && (nextArtist == null || candidateArtist != nextArtist)) {
+                        val nextAtK = if (k + 1 < n) list[k + 1].artist.trim().lowercase() else null
+                        if (currentArtist != nextAtK) {
                             swapIndex = k
                             break
+                        } else if (swapIndex == -1) {
+                            swapIndex = k
                         }
                     }
                 }

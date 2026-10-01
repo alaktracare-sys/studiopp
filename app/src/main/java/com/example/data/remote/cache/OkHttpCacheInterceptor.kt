@@ -24,38 +24,16 @@ import java.util.concurrent.TimeUnit
  */
 class OfflineCacheInterceptor(private val context: Context) : Interceptor {
 
-    private fun isNetworkAvailable(): Boolean {
-        return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            val network = cm?.activeNetwork ?: return false
-            val caps = cm.getNetworkCapabilities(network) ?: return false
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } catch (_: Exception) {
-            true // fallback to true on permission check issues
-        }
-    }
-
     override fun intercept(chain: Interceptor.Chain): Response {
         var request = chain.request()
 
-        // Only handle GET / read-only requests
-        if (!request.method.equals("GET", ignoreCase = true)) {
-            return chain.proceed(request)
-        }
-
-        // Streaming audio is handled exclusively by Media3 AudioCache
-        if (request.url.encodedPath.contains("/stream")) {
-            return chain.proceed(request)
-        }
-
-        // When offline, instruct OkHttp to serve from disk cache if available
-        if (!isNetworkAvailable()) {
-            val offlineCacheControl = CacheControl.Builder()
-                .onlyIfCached()
-                .maxStale(7, TimeUnit.DAYS)
-                .build()
+        // If network is offline and it is a read-only GET request, prefer disk cache
+        if (!com.example.util.NetworkMonitor.isOnline(context) &&
+            request.method.equals("GET", ignoreCase = true) &&
+            !request.url.encodedPath.contains("/stream")
+        ) {
             request = request.newBuilder()
-                .cacheControl(offlineCacheControl)
+                .cacheControl(CacheControl.FORCE_CACHE)
                 .build()
         }
 

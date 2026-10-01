@@ -80,63 +80,59 @@ fun PlaylistScreen(
             isDownloadedPlaylist -> repository.getDownloadedSongs()
             else -> repository.getPlaylistSongs(playlistId)
         }
-        if (fresh.isNotEmpty()) {
-            songs = fresh
-        }
+        songs = fresh
         isLoading = false
     }
 
-    Scaffold(
-        containerColor = AlaktraBackground
-    ) { padding ->
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AlaktraBackground),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.TopCenter
+                .fillMaxHeight()
+                .fillMaxWidth()
+                .widthIn(max = 840.dp),
+            contentPadding = PaddingValues(bottom = 160.dp)
         ) {
-            LazyColumn(
+        // Gradient Header with Playlist Title
+        item {
+            Box(
                 modifier = Modifier
-                    .fillMaxHeight()
                     .fillMaxWidth()
-                    .widthIn(max = 840.dp),
-                contentPadding = PaddingValues(bottom = 140.dp)
-            ) {
-            // Gradient Header with Playlist Title
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    when {
-                                        isOfflineBackup -> Color(0xFF0284C7).copy(alpha = 0.5f)
-                                        isLikedPlaylist -> Color(0xFF6366F1).copy(alpha = 0.5f)
-                                        isDownloadedPlaylist -> Color(0xFF0D9488).copy(alpha = 0.5f)
-                                        else -> AlaktraMint.copy(alpha = 0.35f)
-                                    },
-                                    AlaktraSurface,
-                                    AlaktraBackground
-                                )
+                    .height(220.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                when {
+                                    isOfflineBackup -> Color(0xFF0284C7).copy(alpha = 0.5f)
+                                    isLikedPlaylist -> Color(0xFF6366F1).copy(alpha = 0.5f)
+                                    isDownloadedPlaylist -> Color(0xFF0D9488).copy(alpha = 0.5f)
+                                    else -> AlaktraMint.copy(alpha = 0.35f)
+                                },
+                                AlaktraSurface,
+                                AlaktraBackground
                             )
                         )
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .statusBarsPadding()
+                        .clip(CircleShape)
+                        .background(AlaktraSurface.copy(alpha = 0.6f))
                 ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .clip(CircleShape)
-                            .background(AlaktraSurface.copy(alpha = 0.6f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = AlaktraTextPrimary
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = AlaktraTextPrimary
+                    )
+                }
 
                     Row(
                         modifier = Modifier
@@ -444,7 +440,6 @@ fun PlaylistScreen(
                 }
             }
         }
-    }
     }
 
     selectedSongForMenu?.let { song ->

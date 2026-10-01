@@ -125,12 +125,11 @@ class MusicRepository(private val context: Context) {
 
         val client = OkHttpClient.Builder()
             .cache(httpCache)
-            .addInterceptor(OfflineCacheInterceptor(context))
-            .addNetworkInterceptor(NetworkCacheInterceptor())
             .addInterceptor(logging)
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
 
         val normalized = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
@@ -143,11 +142,15 @@ class MusicRepository(private val context: Context) {
             .create(MusicApiService::class.java)
     }
 
-    fun sanitizeUrl(rawUrl: String): String {
-        if (rawUrl.isBlank()) return ""
+    fun sanitizeUrl(rawUrl: String?): String {
+        if (rawUrl.isNullOrBlank()) return ""
         val configuredBase = authPreferences.getServerBaseUrl().trimEnd('/')
         return if (rawUrl.startsWith("http://100.65.126.106:8000")) {
             rawUrl.replace("http://100.65.126.106:8000", configuredBase)
+        } else if (rawUrl.startsWith("http://localhost:8000")) {
+            rawUrl.replace("http://localhost:8000", configuredBase)
+        } else if (rawUrl.startsWith("http://127.0.0.1:8000")) {
+            rawUrl.replace("http://127.0.0.1:8000", configuredBase)
         } else if (rawUrl.startsWith("/")) {
             "$configuredBase$rawUrl"
         } else {
@@ -160,49 +163,8 @@ class MusicRepository(private val context: Context) {
         return user?.id ?: 1
     }
 
-    // Default sample songs used when server is initially empty or offline
-    private val defaultSongs = listOf(
-        Song(
-            id = 101,
-            title = "Acoustic Melody",
-            artist = "SoundHelix",
-            audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-            coverUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop",
-            duration = 372.0
-        ),
-        Song(
-            id = 102,
-            title = "Microtonal Groove",
-            artist = "Sevish",
-            audioUrl = "https://commondatastorage.googleapis.com/codeskulptor-demos/DDR_assets/Sevish_-__nbsp_.mp3",
-            coverUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&auto=format&fit=crop",
-            duration = 186.0
-        ),
-        Song(
-            id = 103,
-            title = "Lepidoptera Suite",
-            artist = "Epoq Ambient",
-            audioUrl = "https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg",
-            coverUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop",
-            duration = 240.0
-        ),
-        Song(
-            id = 104,
-            title = "Neon Velocity",
-            artist = "Cyber Pulse",
-            audioUrl = "https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/race1.ogg",
-            coverUrl = "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=500&auto=format&fit=crop",
-            duration = 152.0
-        ),
-        Song(
-            id = 105,
-            title = "Harmonic Chillout",
-            artist = "SoundHelix",
-            audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-            coverUrl = "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=500&auto=format&fit=crop",
-            duration = 425.0
-        )
-    )
+    // Default sample songs used when server is initially empty or offline (kept empty for real data only)
+    private val defaultSongs = emptyList<Song>()
 
     // ==========================================
     // AUTHENTICATION
@@ -210,8 +172,25 @@ class MusicRepository(private val context: Context) {
 
     suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val response = api.getSongs()
-            response.isSuccessful
+            // 1. First probe the dedicated /health endpoint
+            val healthResp = try { api.healthCheck() } catch (_: Exception) { null }
+            if (healthResp != null && (healthResp.isSuccessful || healthResp.code() in 200..399)) {
+                return@withContext true
+            }
+
+            // 2. Next probe the songs catalog endpoint
+            val songsResp = try { api.getSongs() } catch (_: Exception) { null }
+            if (songsResp != null && (songsResp.isSuccessful || songsResp.code() in 200..399)) {
+                return@withContext true
+            }
+
+            // 3. Fall back to playlist endpoint
+            val plResp = try { api.getPlaylists(getEffectiveUserId()) } catch (_: Exception) { null }
+            if (plResp != null && (plResp.isSuccessful || plResp.code() in 200..399)) {
+                return@withContext true
+            }
+
+            false
         } catch (_: Exception) {
             false
         }
@@ -349,24 +328,27 @@ class MusicRepository(private val context: Context) {
 
         try {
             val response = api.getSongs()
-            if (response.isSuccessful && response.body() != null) {
+            if (response.code() == 304) {
+                authPreferences.setLastSyncTime("songs")
+                if (localSongs.isNotEmpty()) {
+                    return@withContext attachLocalPaths(localSongs)
+                }
+            } else if (response.isSuccessful && response.body() != null) {
                 val remoteSongs = response.body()!!.map { dto ->
                     Song(
                         id = dto.id,
-                        title = dto.title,
-                        artist = dto.artist,
+                        title = dto.title ?: "Untitled Track",
+                        artist = dto.artist ?: "Unknown Artist",
                         audioUrl = sanitizeUrl(dto.audioUrl),
                         coverUrl = sanitizeUrl(dto.coverUrl),
                         duration = dto.duration,
                         isLiked = likedIds.contains(dto.id)
                     )
                 }
-                if (remoteSongs.isNotEmpty()) {
-                    apiCacheManager.putFeed("home_feed", remoteSongs)
-                    songDao.insertCachedSongs(remoteSongs.map { SongEntity.fromSong(it) })
-                    authPreferences.setLastSyncTime("songs")
-                    return@withContext attachLocalPaths(remoteSongs)
-                }
+                apiCacheManager.putFeed("home_feed", remoteSongs)
+                songDao.insertCachedSongs(remoteSongs.map { SongEntity.fromSong(it) })
+                authPreferences.setLastSyncTime("songs")
+                return@withContext attachLocalPaths(remoteSongs)
             }
         } catch (_: Exception) {
             // Network is unavailable or server error: continue using local cached songs
@@ -377,10 +359,8 @@ class MusicRepository(private val context: Context) {
             return@withContext attachLocalPaths(localSongs)
         }
 
-        // 4. Initial offline fallback: cache default songs to DB and return
-        val enriched = defaultSongs.map { it.copy(isLiked = likedIds.contains(it.id)) }
-        songDao.insertCachedSongs(enriched.map { SongEntity.fromSong(it) })
-        attachLocalPaths(enriched)
+        // No bogus sample data fallback: return empty list
+        emptyList()
     }
 
     suspend fun searchSongs(
@@ -420,8 +400,8 @@ class MusicRepository(private val context: Context) {
                 val songs = response.body()!!.map { dto ->
                     Song(
                         id = dto.id,
-                        title = dto.title,
-                        artist = dto.artist,
+                        title = dto.title ?: "Untitled Track",
+                        artist = dto.artist ?: "Unknown Artist",
                         audioUrl = sanitizeUrl(dto.audioUrl),
                         coverUrl = sanitizeUrl(dto.coverUrl),
                         duration = dto.duration,
@@ -466,8 +446,8 @@ class MusicRepository(private val context: Context) {
                 val songs = response.body()!!.map { dto ->
                     Song(
                         id = dto.id,
-                        title = dto.title,
-                        artist = dto.artist,
+                        title = dto.title ?: "Untitled Track",
+                        artist = dto.artist ?: "Unknown Artist",
                         audioUrl = sanitizeUrl(dto.audioUrl),
                         coverUrl = sanitizeUrl(dto.coverUrl),
                         duration = dto.duration,
@@ -513,8 +493,8 @@ class MusicRepository(private val context: Context) {
                 val songs = response.body()!!.map { dto ->
                     Song(
                         id = dto.id,
-                        title = dto.title,
-                        artist = dto.artist,
+                        title = dto.title ?: "Untitled Track",
+                        artist = dto.artist ?: "Unknown Artist",
                         audioUrl = sanitizeUrl(dto.audioUrl),
                         coverUrl = sanitizeUrl(dto.coverUrl),
                         duration = dto.duration,
@@ -610,9 +590,7 @@ class MusicRepository(private val context: Context) {
         if (songs.isNotEmpty()) {
             attachLocalPaths(songs)
         } else {
-            val enriched = defaultSongs.map { it.copy(isLiked = likedIds.contains(it.id)) }
-            songDao.insertCachedSongs(enriched.map { SongEntity.fromSong(it) })
-            attachLocalPaths(enriched)
+            emptyList()
         }
     }
 
@@ -664,13 +642,18 @@ class MusicRepository(private val context: Context) {
 
         try {
             val response = api.getPlaylists(userId)
-            if (response.isSuccessful && response.body() != null) {
+            if (response.code() == 304) {
+                authPreferences.setLastSyncTime("playlists")
+                if (localPlaylists.isNotEmpty()) {
+                    return@withContext localPlaylists
+                }
+            } else if (response.isSuccessful && response.body() != null) {
                 val userPlaylists = response.body()!!.filter { it.isSystem == 0 }
                 val entities = userPlaylists.map { p ->
                     PlaylistEntity(
                         id = p.id,
                         userId = userId,
-                        name = p.name,
+                        name = p.name ?: "Playlist",
                         description = "Playlist",
                         isSystem = false,
                         songCount = 0,
@@ -811,8 +794,8 @@ class MusicRepository(private val context: Context) {
                         val songs = response.body()!!.map { dto ->
                             Song(
                                 id = dto.id,
-                                title = dto.title,
-                                artist = dto.artist,
+                                title = dto.title ?: "Untitled Track",
+                                artist = dto.artist ?: "Unknown Artist",
                                 audioUrl = sanitizeUrl(dto.audioUrl),
                                 coverUrl = sanitizeUrl(dto.coverUrl),
                                 duration = dto.duration,
@@ -846,8 +829,8 @@ class MusicRepository(private val context: Context) {
                 val remoteSongs = response.body()!!.map { dto ->
                     Song(
                         id = dto.id,
-                        title = dto.title,
-                        artist = dto.artist,
+                        title = dto.title ?: "Untitled Track",
+                        artist = dto.artist ?: "Unknown Artist",
                         audioUrl = sanitizeUrl(dto.audioUrl),
                         coverUrl = sanitizeUrl(dto.coverUrl),
                         duration = dto.duration,
@@ -923,20 +906,17 @@ class MusicRepository(private val context: Context) {
             knownSongs[it.songId] = it.toSong()
         }
 
-        // Filter songs that exist in cache memory or downloaded
+        // Filter ONLY songs that are completely downloaded or 100% fully cached in memory
         val offlineReady = knownSongs.values.filter { song ->
-            allOfflineIds.contains(song.id) ||
-                    (song.localPath != null && File(song.localPath).exists()) ||
-                    com.example.audio.AudioCache.isSongCached(context, song.id)
+            val hasLocalFile = (song.localPath != null && File(song.localPath).exists() && File(song.localPath).length() > 0)
+            val isDownloaded = downloadedIds.contains(song.id)
+            val isFullyCached = com.example.audio.AudioCache.isSongFullyCached(context, song)
+            hasLocalFile || isDownloaded || isFullyCached
         }.distinctBy { it.id }.toMutableList()
 
-        // If cache memory is fresh and no songs streamed yet, provide downloaded or initial songs so user can test immediately
-        if (offlineReady.isEmpty()) {
-            if (downloadedList.isNotEmpty()) {
-                offlineReady.addAll(downloadedList.map { it.toSong() })
-            } else {
-                offlineReady.addAll(defaultSongs.take(3))
-            }
+        // If no cached or downloaded songs exist, do NOT inject un-cached network songs when offline
+        if (offlineReady.isEmpty() && downloadedList.isNotEmpty()) {
+            offlineReady.addAll(downloadedList.map { it.toSong() })
         }
 
         val enriched = offlineReady.map { song ->
@@ -1123,11 +1103,11 @@ class MusicRepository(private val context: Context) {
     }
 
     private suspend fun attachLocalPaths(songs: List<Song>): List<Song> {
-        val cachedMemoryIds = com.example.audio.AudioCache.getCachedSongIds(context)
+        val fullyCachedIds = com.example.audio.AudioCache.getFullyCachedSongIds(context)
         return songs.map { song ->
             val local = downloadManager.getLocalPath(song.id)
-            val isDownloaded = local != null && File(local).exists()
-            val isCached = isDownloaded || cachedMemoryIds.contains(song.id) || com.example.audio.AudioCache.isSongCached(context, song.id)
+            val isDownloaded = local != null && File(local).exists() && File(local).length() > 0
+            val isCached = isDownloaded || fullyCachedIds.contains(song.id) || com.example.audio.AudioCache.isSongFullyCached(context, song)
             if (isDownloaded) {
                 song.copy(localPath = local, isDownloaded = true, isCached = true)
             } else {

@@ -1,5 +1,6 @@
 package com.example.audio
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -7,17 +8,29 @@ import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.util.Log
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.MainActivity
 import com.example.R
+import com.google.common.collect.ImmutableList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MusicPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
@@ -25,7 +38,35 @@ class MusicPlaybackService : MediaSessionService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    private var headsetClickCount = 0
+    private var headsetClickJob: Job? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    private fun handleHeadsetHookClick(audioController: AudioController) {
+        headsetClickCount++
+        headsetClickJob?.cancel()
+        headsetClickJob = serviceScope.launch {
+            delay(350)
+            when (headsetClickCount) {
+                1 -> audioController.togglePlayPause()
+                2 -> audioController.next()
+                3 -> audioController.previous()
+                else -> audioController.previous()
+            }
+            headsetClickCount = 0
+        }
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            val isPlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_READY)
+            if (isPlaying) {
+                acquireLocks()
+            } else if (!player.playWhenReady || player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+                releaseLocks()
+            }
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 acquireLocks()
@@ -42,11 +83,43 @@ class MusicPlaybackService : MediaSessionService() {
         // 1. Create notification channel for Android O+
         createNotificationChannel()
 
-        // 2. Configure media notification provider with playback icon
+        // 2. Configure media notification provider with wall-clock time suppression
         try {
-            val provider = DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId(CHANNEL_ID)
-                .build()
+            val provider = object : MediaNotification.Provider {
+                private val defaultProvider = DefaultMediaNotificationProvider.Builder(this@MusicPlaybackService)
+                    .setChannelId(CHANNEL_ID)
+                    .build()
+
+                override fun createNotification(
+                    mediaSession: MediaSession,
+                    customLayout: ImmutableList<CommandButton>,
+                    actionFactory: MediaNotification.ActionFactory,
+                    onNotificationChangedCallback: MediaNotification.Provider.Callback
+                ): MediaNotification {
+                    val mediaNotification = defaultProvider.createNotification(
+                        mediaSession,
+                        customLayout,
+                        actionFactory,
+                        onNotificationChangedCallback
+                    )
+                    val notif = mediaNotification.notification
+                    // Explicitly suppress wall-clock timestamp and chronometer from header.
+                    // Media notifications represent ongoing playback controlled via MediaSession seekbar,
+                    // not wall-clock events. Showing "when" or chronometer causes an unsynced running timer.
+                    notif.`when` = 0L
+                    notif.extras.putBoolean(Notification.EXTRA_SHOW_WHEN, false)
+                    notif.extras.putBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false)
+                    return mediaNotification
+                }
+
+                override fun handleCustomCommand(
+                    session: MediaSession,
+                    action: String,
+                    extras: Bundle
+                ): Boolean {
+                    return defaultProvider.handleCustomCommand(session, action, extras)
+                }
+            }
             setMediaNotificationProvider(provider)
         } catch (e: Exception) {
             Log.w("MusicPlaybackService", "Failed to set custom notification provider", e)
@@ -60,6 +133,73 @@ class MusicPlaybackService : MediaSessionService() {
         player.addListener(playerListener)
 
         val forwarding = object : ForwardingPlayer(player) {
+            override fun play() {
+                audioController.play()
+            }
+
+            override fun pause() {
+                audioController.pause()
+            }
+
+            override fun stop() {
+                audioController.stop()
+            }
+
+            override fun setPlayWhenReady(playWhenReady: Boolean) {
+                if (playWhenReady) {
+                    audioController.play()
+                } else {
+                    audioController.pause()
+                }
+            }
+
+            override fun seekTo(positionMs: Long) {
+                audioController.seekTo(positionMs)
+            }
+
+            override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+                audioController.seekTo(positionMs)
+            }
+
+            override fun getCurrentPosition(): Long {
+                val state = audioController.playbackState.value
+                val playerPos = player.currentPosition.coerceAtLeast(0L)
+                return if (playerPos > 0L) playerPos else state.currentPositionMs
+            }
+
+            override fun getDuration(): Long {
+                val playerDur = player.duration
+                if (playerDur > 0L && playerDur != androidx.media3.common.C.TIME_UNSET) {
+                    return playerDur
+                }
+                val stateDur = audioController.playbackState.value.durationMs
+                return if (stateDur > 0L) stateDur else super.getDuration()
+            }
+
+            override fun isPlaying(): Boolean {
+                val state = audioController.playbackState.value
+                if (player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+                    return false
+                }
+                return player.isPlaying && state.isPlaying
+            }
+
+            override fun getPlayWhenReady(): Boolean {
+                val state = audioController.playbackState.value
+                if (player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+                    return false
+                }
+                return player.playWhenReady && state.isPlaying
+            }
+
+            override fun getPlaybackState(): Int {
+                val state = audioController.playbackState.value
+                if (!state.isPlaying && player.playbackState == Player.STATE_READY) {
+                    return Player.STATE_READY
+                }
+                return player.playbackState
+            }
+
             override fun seekToNext() {
                 audioController.next()
             }
@@ -124,11 +264,101 @@ class MusicPlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        val mediaSessionCallback = object : MediaSession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo
+            ): MediaSession.ConnectionResult {
+                val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().build()
+                val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                    .add(Player.COMMAND_STOP)
+                    .build()
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(sessionCommands)
+                    .setAvailablePlayerCommands(playerCommands)
+                    .build()
+            }
+
+            override fun onMediaButtonEvent(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                intent: Intent
+            ): Boolean {
+                val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+
+                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) {
+                    when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_HEADSETHOOK,
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                            handleHeadsetHookClick(audioController)
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            audioController.play()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                            audioController.pause()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                            audioController.next()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                        KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                            audioController.previous()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_STOP -> {
+                            audioController.stop()
+                            return true
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
+            }
+        }
+
         val session = MediaSession.Builder(this, forwarding)
             .setSessionActivity(sessionActivityPendingIntent)
+            .setCallback(mediaSessionCallback)
             .build()
         mediaSession = session
         addSession(session)
+
+        // Observe playback state changes from AudioController to keep notification and session in sync
+        serviceScope.launch {
+            var lastPlaying = audioController.playbackState.value.isPlaying
+            var lastSongId = audioController.playbackState.value.currentSong?.id
+            audioController.playbackState.collect { state ->
+                val playingChanged = state.isPlaying != lastPlaying
+                val songChanged = state.currentSong?.id != lastSongId
+                lastPlaying = state.isPlaying
+                lastSongId = state.currentSong?.id
+
+                if (playingChanged || songChanged) {
+                    mediaSession?.let { s ->
+                        try {
+                            onUpdateNotification(s, state.isPlaying)
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
 
         if (player.isPlaying) {
             acquireLocks()
@@ -237,6 +467,8 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        headsetClickJob?.cancel()
+        serviceScope.cancel()
         releaseLocks()
         mediaSession?.player?.removeListener(playerListener)
         mediaSession?.run {

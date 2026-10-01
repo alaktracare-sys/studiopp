@@ -92,7 +92,7 @@ fun ProfileScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(top = padding.calculateTopPadding()),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(
@@ -484,7 +484,7 @@ fun ProfileScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(160.dp))
             }
         }
     }

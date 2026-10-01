@@ -7,8 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1225,6 +1228,11 @@ private fun CustomDurationBar(
     var isDragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
 
+    // When track/duration changes, cleanly reset dragging state
+    LaunchedEffect(durationMs) {
+        isDragging = false
+    }
+
     val currentFraction = if (isDragging) {
         dragFraction
     } else {
@@ -1243,39 +1251,41 @@ private fun CustomDurationBar(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp)
-                .pointerInput(durationMs) {
-                    detectTapGestures { offset ->
-                        if (size.width > 0 && durationMs > 0) {
-                            val f = (offset.x / size.width).coerceIn(0f, 1f)
-                            onSeek((f * durationMs).toLong())
+                .height(26.dp)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val totalWidth = size.width.toFloat()
+                        if (totalWidth > 0f && durationMs > 0L) {
+                            isDragging = true
+                            val initialFrac = (down.position.x / totalWidth).coerceIn(0f, 1f)
+                            dragFraction = initialFrac
+                            down.consume()
+
+                            val pointerId = down.id
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == pointerId }
+                                    if (change == null || change.isConsumed) {
+                                        break
+                                    }
+                                    if (change.changedToUp()) {
+                                        change.consume()
+                                        val finalFrac = (change.position.x / totalWidth).coerceIn(0f, 1f)
+                                        dragFraction = finalFrac
+                                        onSeek((finalFrac * durationMs).toLong())
+                                        break
+                                    } else {
+                                        change.consume()
+                                        dragFraction = (change.position.x / totalWidth).coerceIn(0f, 1f)
+                                    }
+                                }
+                            } finally {
+                                isDragging = false
+                            }
                         }
                     }
-                }
-                .pointerInput(durationMs) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            isDragging = true
-                            if (size.width > 0) {
-                                dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
-                            }
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            if (durationMs > 0) {
-                                onSeek((dragFraction * durationMs).toLong())
-                            }
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            if (size.width > 0) {
-                                dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
-                            }
-                        }
-                    )
                 },
             contentAlignment = Alignment.CenterStart
         ) {

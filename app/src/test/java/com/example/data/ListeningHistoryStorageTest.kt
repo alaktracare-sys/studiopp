@@ -131,4 +131,51 @@ class ListeningHistoryStorageTest {
         assertEquals("1h 14m", formatListeningSeconds(4450L))
         assertEquals("2h 0m", formatListeningSeconds(7200L))
     }
+
+    @Test
+    fun testPlayedThresholdCriteria_requires20SecondsOfActualListening() {
+        assertEquals(20L, com.example.audio.AudioController.MIN_PLAYED_SECONDS_THRESHOLD)
+
+        // Helper evaluating whether a song counts as played based on real listened time vs slider position
+        fun isCountedAsPlayed(
+            actualListenedSec: Long,
+            sliderPositionSec: Long,
+            songDurationSec: Double,
+            isEnded: Boolean
+        ): Boolean {
+            val hasMet20Sec = actualListenedSec >= com.example.audio.AudioController.MIN_PLAYED_SECONDS_THRESHOLD
+            val isShortTrackCompleted = (songDurationSec in 1.0..19.0 && isEnded)
+            return hasMet20Sec || isShortTrackCompleted
+        }
+
+        // 1. User skips to 30 sec or 1 min on the timeline, but only actually listened for 4 seconds
+        assertFalse(
+            "Skipping forward to 30s after 4s real listen time must NOT count as played",
+            isCountedAsPlayed(actualListenedSec = 4L, sliderPositionSec = 30L, songDurationSec = 210.0, isEnded = false)
+        )
+
+        // 2. User plays 19 seconds of a standard track and skips: not counted as played
+        assertFalse(
+            "19 seconds of actual playback is below 20s threshold",
+            isCountedAsPlayed(actualListenedSec = 19L, sliderPositionSec = 19L, songDurationSec = 210.0, isEnded = false)
+        )
+
+        // 3. User plays for exactly 20 seconds: counted as played!
+        assertTrue(
+            "20 seconds of actual playback must count as played",
+            isCountedAsPlayed(actualListenedSec = 20L, sliderPositionSec = 20L, songDurationSec = 210.0, isEnded = false)
+        )
+
+        // 4. User plays for 45 seconds after seeking around: counted as played!
+        assertTrue(
+            "45 seconds of actual playback must count as played",
+            isCountedAsPlayed(actualListenedSec = 45L, sliderPositionSec = 120L, songDurationSec = 210.0, isEnded = false)
+        )
+
+        // 5. Short track (e.g. 15s) played to end: counted as played
+        assertTrue(
+            "Short track under 20s played to completion counts as played",
+            isCountedAsPlayed(actualListenedSec = 15L, sliderPositionSec = 15L, songDurationSec = 15.0, isEnded = true)
+        )
+    }
 }

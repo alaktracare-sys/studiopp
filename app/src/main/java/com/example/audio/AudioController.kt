@@ -114,6 +114,22 @@ class AudioController private constructor(private val context: Context) {
 
     init {
         restoreSavedState()
+        observeNetworkState()
+    }
+
+    private fun observeNetworkState() {
+        scope.launch {
+            NetworkMonitor.observeNetwork(context).collect { isOnline ->
+                if (!isOnline) {
+                    val state = _playbackState.value
+                    val currentSong = state.currentSong
+                    if (state.isPlaying && currentSong != null && !isSongPlayableOffline(currentSong)) {
+                        // Immediately transition to available cached songs
+                        handleOfflineFallback(autoShuffle = state.shuffle)
+                    }
+                }
+            }
+        }
     }
 
     private fun restoreSavedState() {
@@ -266,27 +282,26 @@ class AudioController private constructor(private val context: Context) {
             .build()
 
         exo.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playbackState.value = _playbackState.value.copy(isPlaying = isPlaying)
-                if (isPlaying) {
-                    startProgressTracker()
-                } else {
-                    stopProgressTracker()
+            override fun onEvents(player: Player, events: Player.Events) {
+                syncPlaybackStatus()
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_ENDED) {
+                    handleTrackEnded()
                 }
             }
 
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) {
-                    val dur = exo.duration.coerceAtLeast(0L)
-                    _playbackState.value = _playbackState.value.copy(durationMs = dur)
-                } else if (state == Player.STATE_ENDED) {
-                    handleTrackEnded()
-                }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                val pos = exo.currentPosition.coerceAtLeast(0L)
+                _playbackState.value = _playbackState.value.copy(currentPositionMs = pos)
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 Log.e("AudioController", "Playback error: ${error.errorCodeName} (${error.errorCode}): ${error.message}")
                 _playbackState.value = _playbackState.value.copy(isPlaying = false)
+                stopProgressTracker()
                 scope.launch {
                     val isOnline = NetworkMonitor.isOnline(context)
                     val isNetworkErr = !isOnline || error.errorCode in listOf(
@@ -315,12 +330,47 @@ class AudioController private constructor(private val context: Context) {
         return exo
     }
 
+    private var currentSessionSong: Song? = null
     private var currentSessionHistoryId: Long? = null
     private var currentSessionSongId: Int? = null
     private var currentSessionListenedSec: Long = 0L
+    private var currentSongRecordedAsPlayed: Boolean = false
     private var lastTickTimeMs: Long = 0L
 
+    private fun checkAndRecordIfPlayedThresholdMet() {
+        if (currentSongRecordedAsPlayed) return
+        val song = currentSessionSong ?: _playbackState.value.currentSong ?: return
+        val songDuration = song.duration
+        val hasMetThreshold = currentSessionListenedSec >= MIN_PLAYED_SECONDS_THRESHOLD
+        val isShortTrackCompleted = (songDuration in 1.0..19.0 && player.playbackState == Player.STATE_ENDED)
+
+        if (hasMetThreshold || isShortTrackCompleted) {
+            recordSongAsPlayed(song, currentSessionListenedSec)
+        }
+    }
+
+    private fun syncPlaybackStatus() {
+        val isActuallyPlaying = player.isPlaying || (player.playWhenReady && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING))
+        val pos = player.currentPosition.coerceAtLeast(0L)
+        val dur = player.duration.coerceAtLeast(0L)
+        val isEnded = player.playbackState == Player.STATE_ENDED
+
+        val effectivePlaying = isActuallyPlaying && !isEnded
+        _playbackState.value = _playbackState.value.copy(
+            isPlaying = effectivePlaying,
+            currentPositionMs = pos,
+            durationMs = if (dur > 0) dur else _playbackState.value.durationMs
+        )
+
+        if (effectivePlaying) {
+            startProgressTracker()
+        } else if (!player.playWhenReady || isEnded) {
+            stopProgressTracker()
+        }
+    }
+
     private fun flushCurrentListeningSession() {
+        checkAndRecordIfPlayedThresholdMet()
         val sessionId = currentSessionHistoryId ?: return
         val listenedSec = currentSessionListenedSec
         if (listenedSec <= 0L) return
@@ -335,48 +385,71 @@ class AudioController private constructor(private val context: Context) {
     }
 
     private fun startProgressTracker() {
+        if (progressJob?.isActive == true) return
         progressJob?.cancel()
         lastTickTimeMs = System.currentTimeMillis()
         progressJob = scope.launch {
-            var counter = 0
-            while (isActive) {
-                if (player.isPlaying) {
-                    val pos = player.currentPosition.coerceAtLeast(0L)
-                    val dur = player.duration.coerceAtLeast(0L)
-                    _playbackState.value = _playbackState.value.copy(
-                        currentPositionMs = pos,
-                        durationMs = if (dur > 0) dur else _playbackState.value.durationMs
-                    )
+            try {
+                var counter = 0
+                while (isActive) {
+                    val isPlaying = player.isPlaying || (player.playWhenReady && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING))
+                    if (isPlaying) {
+                        val pos = player.currentPosition.coerceAtLeast(0L)
+                        val dur = player.duration.coerceAtLeast(0L)
+                        _playbackState.value = _playbackState.value.copy(
+                            isPlaying = true,
+                            currentPositionMs = pos,
+                            durationMs = if (dur > 0) dur else _playbackState.value.durationMs
+                        )
 
-                    // Accurately accumulate active listening seconds
-                    val now = System.currentTimeMillis()
-                    val deltaMs = now - lastTickTimeMs
-                    if (deltaMs >= 1000L) {
-                        val secondsToAdd = (deltaMs / 1000L).coerceIn(1L, 4L)
-                        lastTickTimeMs = now
-                        currentSessionListenedSec += secondsToAdd
+                        // Accurately accumulate active listening seconds (actual playing time)
+                        val now = System.currentTimeMillis()
+                        val deltaMs = now - lastTickTimeMs
+                        if (deltaMs >= 1000L) {
+                            val secondsToAdd = (deltaMs / 1000L).coerceIn(1L, 4L)
+                            lastTickTimeMs = now
+                            currentSessionListenedSec += secondsToAdd
 
-                        val sessionId = currentSessionHistoryId
-                        if (sessionId != null && currentSessionListenedSec % 5L == 0L) {
-                            val sec = currentSessionListenedSec
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    val db = com.example.data.local.AppDatabase.getInstance(context)
-                                    db.updateListeningDuration(sessionId, sec)
-                                } catch (_: Exception) {}
+                            // Check if song has been played for at least 20 seconds of real listening time
+                            checkAndRecordIfPlayedThresholdMet()
+
+                            val sessionId = currentSessionHistoryId
+                            // Periodically persist updated listened seconds every 5s once counted as played
+                            if (sessionId != null && currentSessionListenedSec > 0L && currentSessionListenedSec % 5L == 0L) {
+                                val sec = currentSessionListenedSec
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val db = com.example.data.local.AppDatabase.getInstance(context)
+                                        db.updateListeningDuration(sessionId, sec)
+                                    } catch (_: Exception) {}
+                                }
                             }
                         }
-                    }
 
-                    counter++
-                    if (counter >= 25) { // Every ~5 seconds
-                        counter = 0
-                        persistCurrentState()
+                        counter++
+                        if (counter >= 25) { // Every ~5 seconds
+                            counter = 0
+                            scope.launch(Dispatchers.IO) {
+                                persistCurrentState()
+                            }
+                        }
+                    } else {
+                        // Check if player has truly paused or stopped
+                        if (!player.playWhenReady || player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+                            _playbackState.value = _playbackState.value.copy(isPlaying = false)
+                            break
+                        }
+                        lastTickTimeMs = System.currentTimeMillis()
                     }
-                } else {
-                    lastTickTimeMs = System.currentTimeMillis()
+                    delay(200)
                 }
-                delay(200)
+            } catch (e: CancellationException) {
+                // Expected on cancellation
+            } catch (e: Exception) {
+                Log.e("AudioController", "Exception in progress tracker loop", e)
+            } finally {
+                progressJob = null
+                flushCurrentListeningSession()
             }
         }
     }
@@ -385,7 +458,9 @@ class AudioController private constructor(private val context: Context) {
         progressJob?.cancel()
         progressJob = null
         flushCurrentListeningSession()
-        persistCurrentState()
+        scope.launch(Dispatchers.IO) {
+            persistCurrentState()
+        }
     }
 
     fun playContext(
@@ -395,7 +470,22 @@ class AudioController private constructor(private val context: Context) {
     ) {
         val songs = context.tracks
         if (songs.isEmpty()) return
-        val validIndex = startIndex.coerceIn(0, songs.size - 1)
+        val isOnline = NetworkMonitor.isOnline(this.context)
+        val validIndex = if (!isOnline) {
+            val requested = songs.getOrNull(startIndex)
+            if (requested != null && isSongPlayableOffline(requested)) {
+                startIndex.coerceIn(0, songs.size - 1)
+            } else {
+                val firstPlayable = songs.indexOfFirst { isSongPlayableOffline(it) }
+                if (firstPlayable == -1) {
+                    playOfflineBackup(autoShuffle = autoShuffle)
+                    return
+                }
+                firstPlayable
+            }
+        } else {
+            startIndex.coerceIn(0, songs.size - 1)
+        }
         val shouldShuffle = autoShuffle || _playbackState.value.shuffle
 
         val activeOrder = if (shouldShuffle) {
@@ -440,6 +530,16 @@ class AudioController private constructor(private val context: Context) {
     }
 
     fun playSong(song: Song, source: String = "Now Playing") {
+        val isOnline = NetworkMonitor.isOnline(context)
+        if (!isOnline && !isSongPlayableOffline(song)) {
+            val nextPlayable = findNextPlayableOfflineIndex(_playbackState.value.contextIndex)
+            if (nextPlayable != -1) {
+                playSongAtIndex(nextPlayable)
+            } else {
+                playOfflineBackup()
+            }
+            return
+        }
         val currentOrder = _playbackState.value.contextOrder
         val existingIndex = currentOrder.indexOfFirst { it.id == song.id }
         if (existingIndex != -1 && _playbackState.value.context != null) {
@@ -460,6 +560,11 @@ class AudioController private constructor(private val context: Context) {
     }
 
     private fun playSongDirectly(song: Song, pushToHistory: Boolean = false) {
+        val isOnline = NetworkMonitor.isOnline(context)
+        if (!isOnline && !isSongPlayableOffline(song)) {
+            handleOfflineFallback()
+            return
+        }
         val state = _playbackState.value
         val updatedHistory = if (pushToHistory && state.currentSong != null) {
             val wasContext = state.contextOrder.getOrNull(state.contextIndex)?.id == state.currentSong.id
@@ -506,8 +611,8 @@ class AudioController private constructor(private val context: Context) {
         // Extract palette from cover
         extractPalette(song.coverUrl)
 
-        // Record listening history
-        recordHistory(song)
+        // Prepare listening session (counted as played only after >= 20s active playback)
+        prepareNewSongListeningSession(song)
 
         persistCurrentState()
         preloadUpcomingTrack()
@@ -518,6 +623,19 @@ class AudioController private constructor(private val context: Context) {
         if (index !in state.contextOrder.indices) return
 
         val song = state.contextOrder[index]
+        val isOnline = NetworkMonitor.isOnline(context)
+        if (!isOnline && !isSongPlayableOffline(song)) {
+            // Instantly skip forward to the next fully cached song in the playlist
+            val nextPlayable = findNextPlayableOfflineIndex(index + 1)
+            if (nextPlayable != -1 && nextPlayable != index) {
+                playSongAtIndex(nextPlayable)
+                return
+            }
+            // Context has no cached songs: switch seamlessly to Offline Backup
+            playOfflineBackup(autoShuffle = state.shuffle)
+            return
+        }
+
         val updatedRecentPlayed = addToRecentPlayedHistory(song.id, state.recentPlayedSongIds)
         _playbackState.value = state.copy(
             currentSong = song,
@@ -556,8 +674,8 @@ class AudioController private constructor(private val context: Context) {
         // Extract palette from cover
         extractPalette(song.coverUrl)
 
-        // Record listening history
-        recordHistory(song)
+        // Prepare listening session (counted as played only after >= 20s active playback)
+        prepareNewSongListeningSession(song)
 
         persistCurrentState()
         preloadUpcomingTrack()
@@ -617,19 +735,30 @@ class AudioController private constructor(private val context: Context) {
     private var lastRecordedSongId: Int? = null
     private var lastRecordedTimeMs: Long = 0L
 
-    private fun recordHistory(song: Song) {
-        // Flush previous session if active
+    private fun prepareNewSongListeningSession(song: Song) {
+        // Flush previous session if active and qualified
         flushCurrentListeningSession()
 
+        val isDifferentSong = song.id != currentSessionSongId
+        currentSessionSong = song
+        currentSessionSongId = song.id
+        if (isDifferentSong) {
+            currentSessionListenedSec = 0L
+            currentSessionHistoryId = null
+            currentSongRecordedAsPlayed = false
+        }
+        lastTickTimeMs = System.currentTimeMillis()
+    }
+
+    private fun recordSongAsPlayed(song: Song, initialListenedSec: Long) {
+        if (currentSongRecordedAsPlayed) return
+        currentSongRecordedAsPlayed = true
         val now = System.currentTimeMillis()
-        if (song.id == lastRecordedSongId && (now - lastRecordedTimeMs) < 3000L) {
+        if (song.id == lastRecordedSongId && (now - lastRecordedTimeMs) < 1000L) {
             return
         }
         lastRecordedSongId = song.id
         lastRecordedTimeMs = now
-        currentSessionSongId = song.id
-        currentSessionListenedSec = 0L
-        lastTickTimeMs = now
 
         scope.launch(Dispatchers.IO) {
             try {
@@ -642,41 +771,50 @@ class AudioController private constructor(private val context: Context) {
                         audioUrl = song.audioUrl,
                         coverUrl = song.coverUrl,
                         duration = song.duration,
-                        listenedSeconds = 0L,
+                        listenedSeconds = initialListenedSec.coerceAtLeast(0L),
                         playedAt = now
                     )
                 )
                 currentSessionHistoryId = newId
             } catch (e: Exception) {
-                Log.w("AudioController", "Failed to record history", e)
+                Log.w("AudioController", "Failed to record played song history", e)
             }
         }
     }
 
     fun togglePlayPause() {
-        if (player.isPlaying) {
-            player.pause()
-            persistCurrentState()
+        val isCurrentlyPlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_READY)
+        if (isCurrentlyPlaying) {
+            pause()
         } else {
-            if (_playbackState.value.currentSong == null && _playbackState.value.contextOrder.isNotEmpty()) {
-                playSongAtIndex(0)
-            } else if (player.currentMediaItem == null && _playbackState.value.currentSong != null) {
-                val song = _playbackState.value.currentSong!!
-                val savedPos = _playbackState.value.currentPositionMs
-                playSongDirectly(song, pushToHistory = false)
-                if (savedPos > 0) {
-                    player.seekTo(savedPos)
-                }
-            } else {
-                ensureServiceStarted()
-                player.play()
-            }
+            play()
         }
     }
 
     fun pause() {
         player.pause()
-        persistCurrentState()
+        val currentPos = player.currentPosition.coerceAtLeast(0L)
+        _playbackState.value = _playbackState.value.copy(
+            isPlaying = false,
+            currentPositionMs = if (currentPos > 0L) currentPos else _playbackState.value.currentPositionMs
+        )
+        stopProgressTracker()
+        scope.launch(Dispatchers.IO) {
+            persistCurrentState()
+        }
+    }
+
+    fun stop() {
+        player.pause()
+        player.seekTo(0)
+        _playbackState.value = _playbackState.value.copy(
+            isPlaying = false,
+            currentPositionMs = 0L
+        )
+        stopProgressTracker()
+        scope.launch(Dispatchers.IO) {
+            persistCurrentState()
+        }
     }
 
     fun play() {
@@ -690,15 +828,23 @@ class AudioController private constructor(private val context: Context) {
         } else {
             ensureServiceStarted()
             player.play()
+            _playbackState.value = _playbackState.value.copy(isPlaying = true)
+            startProgressTracker()
+            scope.launch(Dispatchers.IO) {
+                persistCurrentState()
+            }
         }
     }
 
     fun seekTo(positionMs: Long) {
+        val target = positionMs.coerceAtLeast(0L)
         if (player.currentMediaItem != null) {
-            player.seekTo(positionMs)
+            player.seekTo(target)
         }
-        _playbackState.value = _playbackState.value.copy(currentPositionMs = positionMs)
-        persistCurrentState()
+        _playbackState.value = _playbackState.value.copy(currentPositionMs = target)
+        scope.launch(Dispatchers.IO) {
+            persistCurrentState()
+        }
     }
 
     /**
@@ -729,14 +875,8 @@ class AudioController private constructor(private val context: Context) {
                 return
             }
 
-            var nextPlayableIndex = -1
-            for (i in (state.contextIndex + 1) until state.contextOrder.size) {
-                if (isSongPlayableOffline(state.contextOrder[i])) {
-                    nextPlayableIndex = i
-                    break
-                }
-            }
-            if (nextPlayableIndex != -1) {
+            val nextPlayableIndex = findNextPlayableOfflineIndex(state.contextIndex + 1)
+            if (nextPlayableIndex != -1 && nextPlayableIndex != state.contextIndex) {
                 val outgoingTrack = state.currentSong
                 val wasContext = outgoingTrack != null && state.contextOrder.getOrNull(state.contextIndex)?.id == outgoingTrack.id
                 val updatedHistory = if (outgoingTrack != null && wasContext) {
@@ -754,16 +894,8 @@ class AudioController private constructor(private val context: Context) {
                 return
             }
 
-            if (state.repeat == RepeatMode.CONTEXT && state.contextOrder.isNotEmpty()) {
-                val loopIndex = state.contextOrder.indexOfFirst { isSongPlayableOffline(it) }
-                if (loopIndex != -1) {
-                    playSongAtIndex(loopIndex)
-                    return
-                }
-            }
-
             // Current queue exhausted for offline: switch seamlessly to Offline Backup (cache memory)
-            handleOfflineFallback()
+            handleOfflineFallback(autoShuffle = state.shuffle)
             return
         }
 
@@ -858,6 +990,9 @@ class AudioController private constructor(private val context: Context) {
                 }
             }
         }
+
+        // Queue/context exhausted and no further tracks: stop playback cleanly and reset position
+        stop()
     }
 
     fun next() {
@@ -872,6 +1007,31 @@ class AudioController private constructor(private val context: Context) {
         val state = _playbackState.value
         val elapsedSec = state.currentPositionMs / 1000
         if (elapsedSec > 3) {
+            seekTo(0)
+            return
+        }
+
+        val isOnline = NetworkMonitor.isOnline(context)
+        if (!isOnline) {
+            val prevInHistory = state.history.lastOrNull { isSongPlayableOffline(it) }
+            if (prevInHistory != null) {
+                val remHistory = state.history.filter { it.id != prevInHistory.id }
+                val orderIdx = state.contextOrder.indexOfFirst { it.id == prevInHistory.id }
+                _playbackState.value = state.copy(
+                    history = remHistory,
+                    contextIndex = if (orderIdx != -1) orderIdx else state.contextIndex
+                )
+                playSongDirectly(prevInHistory, pushToHistory = false)
+                return
+            }
+
+            val prevPlayable = findPreviousPlayableOfflineIndex(state.contextIndex)
+            if (prevPlayable != -1 && prevPlayable != state.contextIndex) {
+                _playbackState.value = state.copy(contextIndex = prevPlayable)
+                playSongAtIndex(prevPlayable)
+                return
+            }
+
             seekTo(0)
             return
         }
@@ -901,12 +1061,48 @@ class AudioController private constructor(private val context: Context) {
 
     /**
      * Checks if a song can be played without an active internet connection.
-     * Either the track was downloaded to permanent disk, or its streaming chunks
-     * exist in the Media3 LRU SimpleCache memory.
+     * Either the track was downloaded to permanent disk, or it is 100% fully
+     * cached in Media3 LRU SimpleCache memory.
      */
     fun isSongPlayableOffline(song: Song): Boolean {
-        if (song.localPath != null && File(song.localPath).exists()) return true
-        return AudioCache.isSongCached(context, song.id)
+        if (song.localPath != null && File(song.localPath).exists() && File(song.localPath).length() > 0) return true
+        val downloadedFile = File(File(context.filesDir, "downloads"), "${song.id}.mp3")
+        if (downloadedFile.exists() && downloadedFile.length() > 0) return true
+        return AudioCache.isSongFullyCached(context, song)
+    }
+
+    /**
+     * Finds next playable offline track index in contextOrder from [fromIndex].
+     */
+    fun findNextPlayableOfflineIndex(fromIndex: Int): Int {
+        val state = _playbackState.value
+        val order = state.contextOrder
+        if (order.isEmpty()) return -1
+        val start = fromIndex.coerceIn(0, order.size)
+        for (i in start until order.size) {
+            if (isSongPlayableOffline(order[i])) return i
+        }
+        for (i in 0 until start) {
+            if (isSongPlayableOffline(order[i])) return i
+        }
+        return -1
+    }
+
+    /**
+     * Finds previous playable offline track index in contextOrder from [fromIndex].
+     */
+    fun findPreviousPlayableOfflineIndex(fromIndex: Int): Int {
+        val state = _playbackState.value
+        val order = state.contextOrder
+        if (order.isEmpty()) return -1
+        val start = (fromIndex - 1).coerceAtMost(order.size - 1)
+        for (i in start downTo 0) {
+            if (isSongPlayableOffline(order[i])) return i
+        }
+        for (i in (order.size - 1) downTo start) {
+            if (isSongPlayableOffline(order[i])) return i
+        }
+        return -1
     }
 
     /**
@@ -915,7 +1111,7 @@ class AudioController private constructor(private val context: Context) {
      * to the next available cached song in the queue or load the full
      * Offline Backup (cached playlist) so playback never stops.
      */
-    fun handleOfflineFallback() {
+    fun handleOfflineFallback(autoShuffle: Boolean = false) {
         val state = _playbackState.value
 
         // 1. Check user queue first
@@ -926,20 +1122,14 @@ class AudioController private constructor(private val context: Context) {
         }
 
         // 2. Check forward in contextOrder
-        var nextPlayableIndex = -1
-        for (i in (state.contextIndex + 1) until state.contextOrder.size) {
-            if (isSongPlayableOffline(state.contextOrder[i])) {
-                nextPlayableIndex = i
-                break
-            }
-        }
-        if (nextPlayableIndex != -1) {
+        val nextPlayableIndex = findNextPlayableOfflineIndex(state.contextIndex + 1)
+        if (nextPlayableIndex != -1 && nextPlayableIndex != state.contextIndex) {
             playSongAtIndex(nextPlayableIndex)
             return
         }
 
         // 3. Current queue exhausted: switch silently to cached songs from background memory
-        playOfflineBackup(autoShuffle = false)
+        playOfflineBackup(autoShuffle = autoShuffle)
     }
 
     /**
@@ -1258,8 +1448,7 @@ class AudioController private constructor(private val context: Context) {
             _isSleepTimerActive.value = false
             _sleepTimerRemainingSeconds.value = null
             sleepTimerJob?.cancel()
-            pause()
-            seekTo(0)
+            stop()
             return
         }
         advanceTrack(AdvanceReason.ENDED)
@@ -1420,6 +1609,8 @@ class AudioController private constructor(private val context: Context) {
     }
 
     companion object {
+        const val MIN_PLAYED_SECONDS_THRESHOLD = 20L
+
         @Volatile
         private var instance: AudioController? = null
 

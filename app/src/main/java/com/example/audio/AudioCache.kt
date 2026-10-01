@@ -13,8 +13,10 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import com.example.model.Song
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -127,24 +129,91 @@ object AudioCache {
     /**
      * Returns all song IDs currently retained in SimpleCache memory.
      */
-    fun getCachedSongIds(context: Context): Set<Int> {
+    /**
+     * Checks if a song is completely and fully cached (not partially) in SimpleCache or local downloads.
+     */
+    fun isSongFullyCached(context: Context, song: Song): Boolean {
+        // 1. Permanent local downloaded file
+        if (song.localPath != null && File(song.localPath).exists() && File(song.localPath).length() > 0) {
+            return true
+        }
+        val downloadedFile = File(File(context.filesDir, "downloads"), "${song.id}.mp3")
+        if (downloadedFile.exists() && downloadedFile.length() > 0) {
+            return true
+        }
+        return isKeyFullyCached(context, "song:${song.id}", song.duration)
+    }
+
+    fun isSongFullyCached(context: Context, songId: Int, durationSec: Double = 0.0): Boolean {
+        val downloadedFile = File(File(context.filesDir, "downloads"), "$songId.mp3")
+        if (downloadedFile.exists() && downloadedFile.length() > 0) {
+            return true
+        }
+        return isKeyFullyCached(context, "song:$songId", durationSec)
+    }
+
+    /**
+     * Inspects Media3 SimpleCache to verify whether an entire song is 100% cached.
+     * Partial streaming chunks (e.g. 512KB preloads or partially listened tracks) return false.
+     */
+    fun isKeyFullyCached(context: Context, key: String, durationSec: Double = 0.0): Boolean {
+        return try {
+            val cache = getSimpleCache(context)
+            if (!cache.keys.contains(key)) return false
+
+            val metadata = cache.getContentMetadata(key)
+            val contentLength = ContentMetadata.getContentLength(metadata)
+
+            if (contentLength > 0L) {
+                // Exact file size is known: verify entire range [0, contentLength) is completely cached
+                cache.isCached(key, 0L, contentLength)
+            } else {
+                // ContentLength unset: verify contiguous span starting at 0 and total bytes exceeds expected audio size
+                val spans = cache.getCachedSpans(key)
+                if (spans.isEmpty()) return false
+                val span0 = spans.firstOrNull { it.position == 0L } ?: return false
+                val totalBytes = cache.getCachedBytes(key, 0L, -1L)
+                val minBytes = if (durationSec > 0.0) {
+                    (durationSec * 12_000.0).toLong().coerceAtLeast(350_000L)
+                } else {
+                    1_000_000L // 1 MB minimum for complete audio file
+                }
+                span0.length >= minBytes && totalBytes >= minBytes
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Returns all song IDs that are FULLY cached in SimpleCache memory.
+     */
+    fun getFullyCachedSongIds(context: Context): Set<Int> {
         return try {
             val cache = getSimpleCache(context)
             val ids = mutableSetOf<Int>()
             for (key in cache.keys) {
-                if (key.startsWith("song:")) {
-                    key.removePrefix("song:").toIntOrNull()?.let { ids.add(it) }
+                val songId = if (key.startsWith("song:")) {
+                    key.removePrefix("song:").toIntOrNull()
                 } else {
-                    val match = Regex("""/songs/(\d+)""").find(key)
-                    if (match != null) {
-                        match.groupValues[1].toIntOrNull()?.let { ids.add(it) }
-                    }
+                    Regex("""/songs/(\d+)""").find(key)?.groupValues?.get(1)?.toIntOrNull()
+                } ?: continue
+
+                if (isKeyFullyCached(context, key)) {
+                    ids.add(songId)
                 }
             }
             ids
         } catch (e: Exception) {
             emptySet()
         }
+    }
+
+    /**
+     * Returns all song IDs currently retained in SimpleCache memory that are fully cached.
+     */
+    fun getCachedSongIds(context: Context): Set<Int> {
+        return getFullyCachedSongIds(context)
     }
 
     /**
@@ -161,30 +230,20 @@ object AudioCache {
     }
 
     /**
-     * Checks if any byte range of a given song is cached in SimpleCache.
+     * Checks if a given song is fully cached in SimpleCache or downloaded.
      */
     fun isSongCached(context: Context, songId: Int): Boolean {
-        return try {
-            val cache = getSimpleCache(context)
-            val key = "song:$songId"
-            getSongCachedBytes(context, songId) > 0 ||
-                    cache.isCached(key, 0, 1024) ||
-                    getCachedSongIds(context).contains(songId)
-        } catch (e: Exception) {
-            false
-        }
+        return isSongFullyCached(context, songId)
     }
 
     /**
      * Preloads an upcoming track into the streaming audio cache asynchronously.
-     * Modern music apps (e.g. Spotify, Apple Music) preload upcoming tracks
-     * so that track changes and gapless transitions happen with zero latency.
+     * Caches the entire track so that transitions to offline mode have full tracks.
      */
     fun preloadTrack(
         context: Context,
         audioUrl: String,
-        songId: Int,
-        bytesToPreload: Long = 512L * 1024L // 512 KB initial buffer
+        songId: Int
     ) {
         if (audioUrl.isBlank() || audioUrl.startsWith("file://")) return
         val appContext = context.applicationContext
@@ -192,20 +251,19 @@ object AudioCache {
             try {
                 val cache = getSimpleCache(appContext)
                 val key = "song:$songId"
-                if (cache.isCached(key, 0, bytesToPreload)) {
+                if (isSongFullyCached(appContext, songId)) {
                     return@launch
                 }
                 val dataSpec = DataSpec.Builder()
                     .setUri(Uri.parse(audioUrl))
                     .setKey(key)
                     .setPosition(0)
-                    .setLength(bytesToPreload)
                     .build()
 
                 val httpDataSource = DefaultHttpDataSource.Factory()
                     .setAllowCrossProtocolRedirects(true)
                     .setConnectTimeoutMs(8000)
-                    .setReadTimeoutMs(10000)
+                    .setReadTimeoutMs(15000)
                     .createDataSource()
 
                 val cacheDataSource = CacheDataSource(
@@ -221,7 +279,7 @@ object AudioCache {
                     null
                 )
                 cacheWriter.cache()
-                Log.d(TAG, "Successfully pre-cached $bytesToPreload bytes for upcoming song #$songId")
+                Log.d(TAG, "Successfully fully cached upcoming song #$songId")
             } catch (e: Exception) {
                 Log.d(TAG, "Preload skipped or interrupted for song #$songId: ${e.message}")
             }
