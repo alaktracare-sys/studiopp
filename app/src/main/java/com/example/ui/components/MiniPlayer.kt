@@ -106,8 +106,8 @@ fun MiniPlayer(
                 ambientColor = Color.Black
             )
             .clip(cardShape)
-            .background(Color(0xFA15151D))
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.14f), shape = cardShape)
+            .background(Color(0xFF151520).copy(alpha = 0.45f))
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.16f), shape = cardShape)
             .draggable(
                 state = rememberDraggableState { delta ->
                     totalDrag += delta
@@ -159,8 +159,8 @@ fun MiniPlayer(
                     path = path,
                     brush = Brush.horizontalGradient(
                         colors = listOf(
-                            color1.copy(alpha = 0.38f),
-                            color2.copy(alpha = 0.48f)
+                            color1.copy(alpha = 0.70f),
+                            color2.copy(alpha = 0.80f)
                         ),
                         startX = 0f,
                         endX = width

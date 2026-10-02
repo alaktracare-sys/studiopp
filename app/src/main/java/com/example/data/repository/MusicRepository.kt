@@ -170,6 +170,31 @@ class MusicRepository(private val context: Context) {
     // AUTHENTICATION
     // ==========================================
 
+    fun updateServerUrl(newUrl: String) {
+        authPreferences.setServerBaseUrl(newUrl)
+        synchronized(this) {
+            cachedBaseUrl = authPreferences.getServerBaseUrl()
+            apiInstance = buildApiService(cachedBaseUrl)
+        }
+    }
+
+    suspend fun testUrl(testBaseUrl: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val testApi = buildApiService(testBaseUrl)
+            val healthResp = try { testApi.healthCheck() } catch (_: Exception) { null }
+            if (healthResp != null && (healthResp.isSuccessful || healthResp.code() in 200..399)) {
+                return@withContext true
+            }
+            val songsResp = try { testApi.getSongs() } catch (_: Exception) { null }
+            if (songsResp != null && (songsResp.isSuccessful || songsResp.code() in 200..399)) {
+                return@withContext true
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
         try {
             // 1. First probe the dedicated /health endpoint

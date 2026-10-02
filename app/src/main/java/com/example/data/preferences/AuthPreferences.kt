@@ -11,12 +11,14 @@ class AuthPreferences(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("already_prefs", Context.MODE_PRIVATE)
 
-    fun saveUser(userId: Int, username: String, email: String, token: String? = null) {
+    fun saveUser(userId: Int, username: String, email: String, token: String? = null, name: String? = null, avatarUrl: String? = null) {
         prefs.edit()
             .putInt(KEY_USER_ID, userId)
             .putString(KEY_USERNAME, username)
             .putString(KEY_EMAIL, email)
             .putString(KEY_TOKEN, token ?: "")
+            .putString(KEY_FULL_NAME, name ?: "")
+            .putString(KEY_AVATAR_URL, avatarUrl ?: "")
             .apply()
     }
 
@@ -25,7 +27,31 @@ class AuthPreferences(context: Context) {
         if (id == -1) return null
         val username = prefs.getString(KEY_USERNAME, "User") ?: "User"
         val email = prefs.getString(KEY_EMAIL, "") ?: ""
-        return User(id, username, email)
+        val name = prefs.getString(KEY_FULL_NAME, "") ?: ""
+        val avatarUrl = prefs.getString(KEY_AVATAR_URL, null)
+        return User(id, username, email, name = if (name.isBlank()) username else name, avatarUrl = avatarUrl)
+    }
+
+    fun updateProfile(name: String, username: String, avatarUrl: String? = null) {
+        val editor = prefs.edit()
+            .putString(KEY_FULL_NAME, name.trim())
+            .putString(KEY_USERNAME, username.trim())
+        if (avatarUrl != null) {
+            editor.putString(KEY_AVATAR_URL, avatarUrl)
+        }
+        editor.apply()
+    }
+
+    fun savePassword(password: String) {
+        prefs.edit().putString(KEY_PASSWORD, password).apply()
+    }
+
+    fun getPassword(): String {
+        return prefs.getString(KEY_PASSWORD, "password123") ?: "password123"
+    }
+
+    fun changePassword(newPassword: String) {
+        savePassword(newPassword)
     }
 
     fun isLoggedIn(): Boolean {
@@ -255,6 +281,9 @@ class AuthPreferences(context: Context) {
         private const val KEY_LIKED_PLAYLIST_ID = "liked_playlist_id"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USERNAME = "username"
+        private const val KEY_FULL_NAME = "full_name"
+        private const val KEY_AVATAR_URL = "avatar_url"
+        private const val KEY_PASSWORD = "user_password"
         private const val KEY_EMAIL = "email"
         private const val KEY_TOKEN = "token"
         private const val KEY_LIKED_SONGS = "liked_song_ids"

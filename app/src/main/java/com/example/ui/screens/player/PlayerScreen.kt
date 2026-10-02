@@ -10,8 +10,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -50,6 +53,7 @@ fun PlayerScreen(
     playbackState: PlaybackState,
     isDownloaded: Boolean = false,
     downloadProgress: Float? = null,
+    onNavigateToEqualizer: () -> Unit = {},
     onToggleDownload: () -> Unit = {},
     onAddToPlaylist: () -> Unit = {},
     onClose: () -> Unit,
@@ -58,6 +62,14 @@ fun PlayerScreen(
     val song = playbackState.currentSong ?: run {
         onClose()
         return
+    }
+
+    val effectiveDurationMs = if (playbackState.durationMs > 0L) {
+        playbackState.durationMs
+    } else if (song.duration > 0.0) {
+        (song.duration * 1000).toLong()
+    } else {
+        0L
     }
 
     val context = LocalContext.current
@@ -300,6 +312,22 @@ fun PlayerScreen(
                             }
                         )
 
+                        // Equalizer
+                        DropdownMenuItem(
+                            text = { Text("Equalizer", color = AlaktraTextPrimary) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = AlaktraMint
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToEqualizer()
+                            }
+                        )
+
                         // Sleep timer
                         DropdownMenuItem(
                             text = {
@@ -456,7 +484,7 @@ fun PlayerScreen(
 
                         CustomDurationBar(
                             positionMs = playbackState.currentPositionMs,
-                            durationMs = playbackState.durationMs,
+                            durationMs = effectiveDurationMs,
                             onSeek = { targetMs -> audioController.seekTo(targetMs) },
                             modifier = Modifier.padding(horizontal = 4.dp)
                         )
@@ -738,7 +766,7 @@ fun PlayerScreen(
                 // Custom Duration Bar (matching uploaded screenshot)
                 CustomDurationBar(
                     positionMs = playbackState.currentPositionMs,
-                    durationMs = playbackState.durationMs,
+                    durationMs = effectiveDurationMs,
                     onSeek = { targetMs -> audioController.seekTo(targetMs) },
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
@@ -1248,51 +1276,54 @@ private fun CustomDurationBar(
     val density = LocalDensity.current
 
     Column(modifier = modifier.fillMaxWidth()) {
-        BoxWithConstraints(
+        var barWidthPx by remember { mutableFloatStateOf(1f) }
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(26.dp)
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val totalWidth = size.width.toFloat()
-                        if (totalWidth > 0f && durationMs > 0L) {
-                            isDragging = true
-                            val initialFrac = (down.position.x / totalWidth).coerceIn(0f, 1f)
-                            dragFraction = initialFrac
-                            down.consume()
-
-                            val pointerId = down.id
-                            try {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == pointerId }
-                                    if (change == null || change.isConsumed) {
-                                        break
-                                    }
-                                    if (change.changedToUp()) {
-                                        change.consume()
-                                        val finalFrac = (change.position.x / totalWidth).coerceIn(0f, 1f)
-                                        dragFraction = finalFrac
-                                        onSeek((finalFrac * durationMs).toLong())
-                                        break
-                                    } else {
-                                        change.consume()
-                                        dragFraction = (change.position.x / totalWidth).coerceIn(0f, 1f)
-                                    }
-                                }
-                            } finally {
-                                isDragging = false
-                            }
+                .height(34.dp)
+                .testTag("player_seek_bar")
+                .onSizeChanged { barWidthPx = it.width.toFloat().coerceAtLeast(1f) }
+                .pointerInput(durationMs) {
+                    detectTapGestures { offset ->
+                        if (durationMs > 0L && barWidthPx > 0f) {
+                            val frac = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                            dragFraction = frac
+                            onSeek((frac * durationMs).toLong())
                         }
                     }
+                }
+                .pointerInput(durationMs) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            if (durationMs > 0L && barWidthPx > 0f) {
+                                isDragging = true
+                                dragFraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                            }
+                        },
+                        onDragEnd = {
+                            if (durationMs > 0L) {
+                                onSeek((dragFraction * durationMs).toLong())
+                            }
+                            isDragging = false
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                        },
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            if (durationMs > 0L && barWidthPx > 0f) {
+                                dragFraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
+                            }
+                        }
+                    )
                 },
             contentAlignment = Alignment.CenterStart
         ) {
-            val totalWidthPx = constraints.maxWidth.toFloat()
+            val totalWidthPx = barWidthPx
             val activeWidthPx = totalWidthPx * currentFraction
 
-            // Inactive track line
+            // Inactive track line (centered vertically)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1301,7 +1332,7 @@ private fun CustomDurationBar(
                     .background(Color.White.copy(alpha = 0.25f))
             )
 
-            // Active track line
+            // Active track line (centered vertically)
             Box(
                 modifier = Modifier
                     .fillMaxWidth(currentFraction)
@@ -1320,7 +1351,7 @@ private fun CustomDurationBar(
             Box(
                 modifier = Modifier
                     .offset(x = thumbOffsetDp)
-                    .size(10.dp)
+                    .size(11.dp)
                     .clip(CircleShape)
                     .background(Color.White)
             )

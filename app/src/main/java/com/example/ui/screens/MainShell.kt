@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +42,7 @@ import com.example.ui.components.MiniPlayer
 import com.example.ui.responsive.rememberWindowSizeInfo
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.library.LibraryScreen
+import com.example.ui.screens.equalizer.EqualizerScreen
 import com.example.ui.screens.player.PlayerScreen
 import com.example.ui.screens.playlist.AddSongToPlaylistScreen
 import com.example.ui.screens.playlist.PlaylistScreen
@@ -51,7 +53,7 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 enum class Screen {
-    HOME, SEARCH, LIBRARY, PLAYLIST, ADD_SONGS, PROFILE, HISTORY
+    HOME, SEARCH, LIBRARY, PLAYLIST, ADD_SONGS, PROFILE, EQUALIZER, HISTORY
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +100,10 @@ fun MainShell(
                 currentScreen = Screen.HOME
                 currentTab = 0
             }
+            currentScreen == Screen.EQUALIZER -> {
+                currentScreen = Screen.HOME
+                currentTab = 0
+            }
             currentTab != 0 -> {
                 currentTab = 0
                 currentScreen = Screen.HOME
@@ -124,6 +130,7 @@ fun MainShell(
         Screen.LIBRARY,
         Screen.PLAYLIST,
         Screen.PROFILE,
+        Screen.EQUALIZER,
         Screen.HISTORY
     )
     val hasBottomBar = !useNavRail && !showFullPlayer && currentScreen in screensWithBottomNav
@@ -138,10 +145,18 @@ fun MainShell(
             bottomBar = {
                 if (hasBottomBar) {
                     Surface(
-                        color = Color(0xFF121212),
+                        color = Color.Transparent,
                         contentColor = AlaktraTextPrimary,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color(0xFF0C0D12).copy(alpha = 0.80f),
+                                        Color(0xFF0C0D12)
+                                    )
+                                )
+                            )
                             .drawBehind {
                                 // Crisp subtle top divider line spanning full width
                                 drawLine(
@@ -159,7 +174,7 @@ fun MainShell(
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             NavigationBar(
-                                containerColor = Color(0xFF121212),
+                                containerColor = Color.Transparent,
                                 contentColor = AlaktraTextPrimary,
                                 tonalElevation = 0.dp,
                                 windowInsets = WindowInsets(0, 0, 0, 0),
@@ -397,9 +412,9 @@ fun MainShell(
                         AnimatedContent(
                             targetState = currentScreen,
                             transitionSpec = {
-                                val isForward = (targetState == Screen.PLAYLIST || targetState == Screen.PROFILE || targetState == Screen.ADD_SONGS) &&
+                                val isForward = (targetState == Screen.PLAYLIST || targetState == Screen.PROFILE || targetState == Screen.EQUALIZER || targetState == Screen.ADD_SONGS) &&
                                         (initialState == Screen.HOME || initialState == Screen.SEARCH || initialState == Screen.LIBRARY)
-                                val isBackward = (initialState == Screen.PLAYLIST || initialState == Screen.PROFILE || initialState == Screen.ADD_SONGS) &&
+                                val isBackward = (initialState == Screen.PLAYLIST || initialState == Screen.PROFILE || initialState == Screen.EQUALIZER || initialState == Screen.ADD_SONGS) &&
                                         (targetState == Screen.HOME || targetState == Screen.SEARCH || targetState == Screen.LIBRARY)
 
                                 when {
@@ -444,6 +459,8 @@ fun MainShell(
                                         repository = repository,
                                         audioController = audioController,
                                         onNavigateToProfile = { currentScreen = Screen.PROFILE },
+                                        onNavigateToEqualizer = { currentScreen = Screen.EQUALIZER },
+                                        onNavigateToHistory = { currentScreen = Screen.HISTORY },
                                         onNavigateToPlaylistSelect = { song ->
                                             scope.launch {
                                                 availablePlaylists = repository.getPlaylists()
@@ -506,6 +523,16 @@ fun MainShell(
                                             currentTab = 0
                                         },
                                         onLogout = onLogout
+                                    )
+                                }
+
+                                Screen.EQUALIZER -> {
+                                    EqualizerScreen(
+                                        audioController = audioController,
+                                        onBack = {
+                                            currentScreen = Screen.HOME
+                                            currentTab = 0
+                                        }
                                     )
                                 }
 
@@ -579,6 +606,10 @@ fun MainShell(
                 playbackState = playbackState,
                 isDownloaded = isDownloaded,
                 downloadProgress = currentDownloadProgress,
+                onNavigateToEqualizer = {
+                    showFullPlayer = false
+                    currentScreen = Screen.EQUALIZER
+                },
                 onToggleDownload = {
                     playbackState.currentSong?.let { song ->
                         scope.launch {

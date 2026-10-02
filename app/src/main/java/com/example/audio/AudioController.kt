@@ -103,6 +103,7 @@ data class PlaybackState(
 @SuppressLint("StaticFieldLeak")
 class AudioController private constructor(private val context: Context) {
     val player: ExoPlayer by lazy { createPlayer() }
+    val equalizerManager: EqualizerManager by lazy { EqualizerManager(context, player) }
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -284,6 +285,9 @@ class AudioController private constructor(private val context: Context) {
         exo.addListener(object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
                 syncPlaybackStatus()
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_READY) {
+                    equalizerManager.attachToCurrentSession()
+                }
                 if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_ENDED) {
                     handleTrackEnded()
                 }
@@ -839,6 +843,10 @@ class AudioController private constructor(private val context: Context) {
     fun seekTo(positionMs: Long) {
         val target = positionMs.coerceAtLeast(0L)
         if (player.currentMediaItem != null) {
+            player.seekTo(target)
+        } else if (_playbackState.value.currentSong != null) {
+            val song = _playbackState.value.currentSong!!
+            playSongDirectly(song, pushToHistory = false)
             player.seekTo(target)
         }
         _playbackState.value = _playbackState.value.copy(currentPositionMs = target)

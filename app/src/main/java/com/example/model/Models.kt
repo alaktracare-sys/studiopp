@@ -34,7 +34,9 @@ data class Playlist(
 data class User(
     val id: Int,
     val username: String,
-    val email: String
+    val email: String,
+    val name: String = "",
+    val avatarUrl: String? = null
 )
 
 data class OfflineAction(

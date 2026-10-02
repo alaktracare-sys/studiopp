@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,7 @@ import com.example.ui.components.SongItemRow
 import com.example.ui.components.SongMenuBottomSheet
 import com.example.ui.responsive.WindowWidthSize
 import com.example.ui.responsive.rememberWindowSizeInfo
+import com.example.ui.screens.profile.AVATAR_PRESETS
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -45,6 +47,8 @@ fun HomeScreen(
     repository: MusicRepository,
     audioController: AudioController,
     onNavigateToProfile: () -> Unit,
+    onNavigateToEqualizer: () -> Unit = {},
+    onNavigateToHistory: () -> Unit = {},
     onNavigateToPlaylistSelect: (Song) -> Unit,
     onNavigateToPlaylist: (Int, String) -> Unit = { _, _ -> },
     onNavigateToLikedSongs: () -> Unit = {},
@@ -55,6 +59,7 @@ fun HomeScreen(
         .collectAsState(initial = com.example.util.NetworkMonitor.isOnline(context))
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+    val historyList by repository.listeningHistory.collectAsState(initial = emptyList())
     var isLoading by remember { mutableStateOf(true) }
     var selectedSongForMenu by remember { mutableStateOf<Song?>(null) }
     val scope = rememberCoroutineScope()
@@ -157,22 +162,81 @@ fun HomeScreen(
                             )
                         }
 
-                        // Profile / Settings Action
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(AlaktraSurface)
-                                .border(1.dp, AlaktraBorder, CircleShape)
-                                .clickable(onClick = onNavigateToProfile)
+                        // Header Actions: History, Equalizer & Profile Buttons
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Profile & Settings",
-                                tint = AlaktraMint,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            // History Button
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("history_button")
+                                    .clip(CircleShape)
+                                    .background(AlaktraSurface)
+                                    .border(1.dp, AlaktraBorder, CircleShape)
+                                    .clickable(onClick = onNavigateToHistory)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = "Listening History",
+                                    tint = AlaktraMint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Equalizer Button
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("equalizer_button")
+                                    .clip(CircleShape)
+                                    .background(AlaktraSurface)
+                                    .border(1.dp, AlaktraBorder, CircleShape)
+                                    .clickable(onClick = onNavigateToEqualizer)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = "Equalizer",
+                                    tint = AlaktraMint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Profile / Account Button
+                            val userAvatarPreset = remember(user?.avatarUrl) {
+                                AVATAR_PRESETS.firstOrNull { it.id == user?.avatarUrl }
+                            }
+
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .testTag("profile_button")
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (userAvatarPreset != null) {
+                                            Brush.linearGradient(userAvatarPreset.colors)
+                                        } else {
+                                            Brush.linearGradient(listOf(AlaktraSurface, AlaktraSurface))
+                                        }
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (userAvatarPreset != null) Color.White.copy(alpha = 0.3f) else AlaktraBorder,
+                                        CircleShape
+                                    )
+                                    .clickable(onClick = onNavigateToProfile)
+                            ) {
+                                Icon(
+                                    imageVector = userAvatarPreset?.icon ?: Icons.Default.Person,
+                                    contentDescription = "Profile & Account",
+                                    tint = if (userAvatarPreset != null) Color.White else AlaktraMint,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
 
@@ -345,6 +409,112 @@ fun HomeScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Recently Played Section from Listening History
+                if (historyList.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = horizontalPad)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.History,
+                                        contentDescription = null,
+                                        tint = AlaktraMint,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Recently Played",
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 20.sp
+                                        ),
+                                        color = AlaktraTextPrimary
+                                    )
+                                }
+                                TextButton(onClick = onNavigateToHistory) {
+                                    Text("See all", color = AlaktraMint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            val uniqueRecent = remember(historyList) {
+                                historyList.distinctBy { it.songId }.take(10)
+                            }
+
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = horizontalPad),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uniqueRecent) { historyItem ->
+                                    val song = historyItem.toSong()
+                                    val isCurrentSong = playbackState.currentSong?.id == song.id
+                                    Column(
+                                        modifier = Modifier
+                                            .width(cardWidth)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                audioController.playSong(song, source = "Recently Played")
+                                            }
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(cardWidth)
+                                                .clip(RoundedCornerShape(12.dp))
+                                        ) {
+                                            SongCover(
+                                                imageUrl = song.coverUrl,
+                                                size = cardWidth,
+                                                cornerRadius = 12.dp
+                                            )
+                                            if (isCurrentSong && playbackState.isPlaying) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color.Black.copy(alpha = 0.45f))
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.GraphicEq,
+                                                        contentDescription = null,
+                                                        tint = AlaktraMint,
+                                                        modifier = Modifier.size(28.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = song.title,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = if (isCurrentSong) AlaktraMint else AlaktraTextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = song.artist,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = AlaktraTextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
